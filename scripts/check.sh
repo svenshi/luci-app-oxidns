@@ -12,7 +12,5 @@ if command -v msgfmt >/dev/null 2>&1; then
 	msgfmt --check po/zh_Hans/oxidns.po -o /dev/null
 fi
 node --check scripts/write-ar.mjs
-node --check templates/oxidns-openwrt-packages/scripts/generate-manifest.mjs
 sh -n root/usr/libexec/rpcd/luci.oxidns
 sh -n scripts/release-check.sh
-sh -n templates/oxidns-openwrt-packages/package/oxidns/files/oxidns.init
