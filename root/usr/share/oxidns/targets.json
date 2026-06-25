@@ -19,7 +19,12 @@
 		{
 			"rust_target": "arm-unknown-linux-musleabihf",
 			"openwrt_arches": [],
-			"aliases": [ "arm", "armv7", "armv7l" ]
+			"aliases": [ "arm", "armhf" ]
+		},
+		{
+			"rust_target": "armv7-unknown-linux-musleabihf",
+			"openwrt_arches": [],
+			"aliases": [ "armv7", "armv7l" ]
 		}
 	]
 }
