@@ -386,6 +386,100 @@ safe_single_line_value() {
 	return 0
 }
 
+json_field_string() {
+	NAME="$1"
+	VALUE="$2"
+	printf '"%s":' "$NAME"
+	json_string "$VALUE"
+}
+
+emit_settings_read() {
+	load_settings
+	TOKEN_SET=0
+	if [ -n "$GITHUB_TOKEN" ]; then TOKEN_SET=1; fi
+	printf '{'
+	printf '"ok":true,'
+	json_field_string install_mode "$(uci_get install_mode package)"
+	printf ','
+	json_field_string service_name "$SERVICE_NAME"
+	printf ','
+	json_field_string config_path "$CONFIG_PATH"
+	printf ','
+	json_field_string working_dir "$WORKING_DIR"
+	printf ','
+	json_field_string api_base_url "$API_BASE_URL"
+	printf ','
+	json_field_string package_feed_url "$(uci_get package_feed_url 'https://svenshi.github.io/oxidns-openwrt-packages')"
+	printf ','
+	json_field_string manifest_url "$MANIFEST_URL"
+	printf ','
+	json_field_string download_proxy "$DOWNLOAD_PROXY"
+	printf ',"github_token_set":'
+	json_bool "$TOKEN_SET"
+	printf '}\n'
+}
+
+settings_value() {
+	KEY="$1"
+	INPUT="$2"
+	VALUE="$(input_value "$KEY" "$INPUT")"
+	if ! safe_single_line_value "$VALUE"; then
+		return 1
+	fi
+	printf '%s' "$VALUE"
+}
+
+emit_settings_save() {
+	INPUT="$(cat)"
+	if ! command -v uci >/dev/null 2>&1; then
+		json_error "uci_unavailable" "uci command not found"
+		return 1
+	fi
+
+	INSTALL_MODE="$(settings_value install_mode "$INPUT")"
+	SERVICE_VALUE="$(settings_value service_name "$INPUT")"
+	CONFIG_VALUE="$(settings_value config_path "$INPUT")"
+	WORKING_VALUE="$(settings_value working_dir "$INPUT")"
+	API_VALUE="$(settings_value api_base_url "$INPUT")"
+	FEED_VALUE="$(settings_value package_feed_url "$INPUT")"
+	MANIFEST_VALUE="$(settings_value manifest_url "$INPUT")"
+	PROXY_VALUE="$(settings_value download_proxy "$INPUT")"
+
+	case "$INSTALL_MODE" in
+		package|binary) ;;
+		*)
+			json_error "invalid_install_mode" "install_mode must be package or binary"
+			return 1
+			;;
+	esac
+
+	uci -q set oxidns.main=settings
+	uci -q set "oxidns.main.install_mode=$INSTALL_MODE"
+	uci -q set "oxidns.main.service_name=$SERVICE_VALUE"
+	uci -q set "oxidns.main.config_path=$CONFIG_VALUE"
+	uci -q set "oxidns.main.working_dir=$WORKING_VALUE"
+	uci -q set "oxidns.main.api_base_url=$API_VALUE"
+	uci -q set "oxidns.main.package_feed_url=$FEED_VALUE"
+	uci -q set "oxidns.main.manifest_url=$MANIFEST_VALUE"
+	uci -q set "oxidns.main.download_proxy=$PROXY_VALUE"
+
+	NEW_TOKEN="$(input_value github_token "$INPUT")"
+	if [ -n "$NEW_TOKEN" ]; then
+		if ! safe_single_line_value "$NEW_TOKEN"; then
+			json_error "invalid_token" "github_token must be a single-line value"
+			return 1
+		fi
+		uci -q set oxidns.main.github_token="$NEW_TOKEN"
+	fi
+
+	if uci -q commit oxidns; then
+		emit_settings_read
+	else
+		json_error "settings_save_failed" "failed to commit oxidns settings"
+		return 1
+	fi
+}
+
 write_basic_config_temp() {
 	SOURCE_FILE="$1"
 	OUT_FILE="$2"
@@ -918,6 +1012,8 @@ case "${1:-}" in
 		printf '"config_save":{"content":"string","base_mtime":"string","reload":"boolean"},'
 		printf '"config_basic_read":{},'
 		printf '"config_basic_save":{"log_level":"string","api_http_listen":"string","base_mtime":"string","reload":"boolean"},'
+		printf '"settings_read":{},'
+		printf '"settings_save":{"install_mode":"string","service_name":"string","config_path":"string","working_dir":"string","api_base_url":"string","package_feed_url":"string","manifest_url":"string","download_proxy":"string","github_token":"string"},'
 		printf '"logs_recent":{"limit":"number"}'
 		printf '}\n'
 		;;
@@ -970,6 +1066,12 @@ case "${1:-}" in
 				;;
 			config_basic_save)
 				emit_config_basic_save
+				;;
+			settings_read)
+				emit_settings_read
+				;;
+			settings_save)
+				emit_settings_save
 				;;
 			logs_recent)
 				emit_logs_recent
