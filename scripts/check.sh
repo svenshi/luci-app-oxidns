@@ -7,4 +7,5 @@ node -e "for (const f of ['root/usr/share/luci/menu.d/luci-app-oxidns.json','roo
 node --check scripts/write-ar.mjs
 node --check templates/oxidns-openwrt-packages/scripts/generate-manifest.mjs
 sh -n root/usr/libexec/rpcd/luci.oxidns
+sh -n scripts/release-check.sh
 sh -n templates/oxidns-openwrt-packages/package/oxidns/files/oxidns.init
