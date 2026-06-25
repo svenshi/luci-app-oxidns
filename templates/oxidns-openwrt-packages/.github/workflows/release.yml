@@ -1,0 +1,126 @@
+name: OpenWrt Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      oxidns_ref:
+        description: OxiDNS git ref or tag to package
+        required: true
+        default: main
+      oxidns_version:
+        description: OxiDNS version, for example v1.4.0
+        required: true
+  repository_dispatch:
+    types:
+      - oxidns_release
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      oxidns_ref: ${{ steps.resolve.outputs.oxidns_ref }}
+      oxidns_version: ${{ steps.resolve.outputs.oxidns_version }}
+    steps:
+      - id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "oxidns_ref=${{ github.event.client_payload.ref }}" >> "$GITHUB_OUTPUT"
+            echo "oxidns_version=${{ github.event.client_payload.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "oxidns_ref=${{ inputs.oxidns_ref }}" >> "$GITHUB_OUTPUT"
+            echo "oxidns_version=${{ inputs.oxidns_version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  package:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rust_target: x86_64-unknown-linux-musl
+            openwrt_arch: x86_64
+          - rust_target: aarch64-unknown-linux-musl
+            openwrt_arch: aarch64
+          - rust_target: i686-unknown-linux-musl
+            openwrt_arch: i386
+          - rust_target: arm-unknown-linux-musleabihf
+            openwrt_arch: armv7
+    steps:
+      - name: Checkout package repo
+        uses: actions/checkout@v7
+
+      - name: Checkout OxiDNS
+        uses: actions/checkout@v7
+        with:
+          repository: svenshi/oxidns
+          ref: ${{ needs.plan.outputs.oxidns_ref }}
+          path: oxidns
+
+      - name: Prepare package workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ipk/${{ matrix.openwrt_arch }} dist/apk/${{ matrix.openwrt_arch }}
+          echo "This template expects an OpenWrt SDK packaging job here." > dist/README.txt
+          echo "Replace this placeholder with SDK build steps for ${{ matrix.rust_target }}." >> dist/README.txt
+
+      - name: Upload placeholder package metadata
+        uses: actions/upload-artifact@v7
+        with:
+          name: oxidns-openwrt-${{ matrix.openwrt_arch }}
+          path: dist
+
+  manifest:
+    needs: [plan, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: oxidns-openwrt-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate manifest
+        run: |
+          node scripts/generate-manifest.mjs \
+            --dist dist \
+            --version "${{ needs.plan.outputs.oxidns_version }}" \
+            --commit "${{ github.sha }}" \
+            --feed-url "https://${{ github.repository_owner }}.github.io/oxidns-openwrt-packages"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.plan.outputs.oxidns_version }}
+          files: |
+            dist/**/*.ipk
+            dist/**/*.apk
+            dist/manifest.json
+            dist/latest.json
+            dist/sha256sums.txt
+          generate_release_notes: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  pages:
+    needs: manifest
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
