@@ -1,0 +1,43 @@
+#!/bin/sh
+
+set -eu
+
+CONFIG_PATH="/etc/oxidns/config.yaml"
+WORKING_DIR="/var/lib/oxidns"
+SERVICE_NAME="oxidns"
+
+json_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+print_status() {
+	printf '{'
+	printf '"ok":true,'
+	printf '"backend":"rpcd",'
+	printf '"install_mode":"package",'
+	printf '"service":"%s",' "$(json_escape "$SERVICE_NAME")"
+	printf '"config_path":"%s",' "$(json_escape "$CONFIG_PATH")"
+	printf '"working_dir":"%s"' "$(json_escape "$WORKING_DIR")"
+	printf '}\n'
+}
+
+case "${1:-}" in
+	list)
+		printf '{"status":{}}\n'
+		;;
+	call)
+		case "${2:-}" in
+			status)
+				print_status
+				;;
+			*)
+				printf '{"ok":false,"error":"unknown method"}\n'
+				exit 1
+				;;
+		esac
+		;;
+	*)
+		printf '{"ok":false,"error":"usage: luci.oxidns list|call <method>"}\n'
+		exit 1
+		;;
+esac

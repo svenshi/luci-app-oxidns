@@ -1,0 +1,13 @@
+{
+	"admin/services/oxidns": {
+		"title": "OxiDNS",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "oxidns/overview"
+		},
+		"depends": {
+			"acl": [ "luci-app-oxidns" ]
+		}
+	}
+}

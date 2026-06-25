@@ -1,0 +1,15 @@
+{
+	"luci-app-oxidns": {
+		"description": "Grant access to the OxiDNS LuCI app",
+		"read": {
+			"ubus": {
+				"luci.oxidns": [ "status" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"luci.oxidns": [ "status" ]
+			}
+		}
+	}
+}
