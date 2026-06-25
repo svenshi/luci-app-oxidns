@@ -139,16 +139,17 @@ scripts/release-check.sh 0.1.0 dist
 
 本仓库的 release workflow 会运行静态检查、集成检查，构建 LuCI `ipk` / `apk`，构建简体中文 `luci-i18n-oxidns-zh-cn` artifact，并发布到 GitHub Release。
 
-## 首版内核包矩阵
+## OpenWrt 内核包矩阵
 
-首版 OpenWrt 内核包矩阵目标：
+OpenWrt 内核包矩阵目标：
 
 - `x86_64-unknown-linux-musl`
 - `aarch64-unknown-linux-musl`
 - `i686-unknown-linux-musl`
-- `arm-unknown-linux-musleabihf`
+- `arm-unknown-linux-musleabihf`（32 位 ARM hard-float）
+- `armv7-unknown-linux-musleabihf`（ARMv7 hard-float，后续发行版本支持）
 
-包选择基于 OpenWrt 包管理器、包架构，以及 `oxidns-openwrt-packages` 生成的 manifest。
+`arm-unknown-linux-musleabihf` 与 `armv7-unknown-linux-musleabihf` 是两个不同发行目标，不能互相替代。包选择基于 OpenWrt 包管理器、包架构，以及 `oxidns-openwrt-packages` 生成的 manifest。
 
 ## 已知限制
 
