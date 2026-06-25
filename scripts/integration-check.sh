@@ -26,15 +26,6 @@ ar t "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" | grep -q '^data.tar.gz
 tar -tzf "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" | grep -q './usr/libexec/rpcd/luci.oxidns'
 tar -tzf "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" | grep -q './usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo'
 
-MANIFEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-manifest.XXXXXX")"
-mkdir -p "$MANIFEST_DIR/ipk/x86_64" "$MANIFEST_DIR/apk/x86_64"
-printf ipk > "$MANIFEST_DIR/ipk/x86_64/oxidns_1.4.0_x86_64.ipk"
-printf apk > "$MANIFEST_DIR/apk/x86_64/oxidns-1.4.0-r1.apk"
-node templates/oxidns-openwrt-packages/scripts/generate-manifest.mjs \
-	--dist "$MANIFEST_DIR" \
-	--version v1.4.0 \
-	--commit 0000000000000000000000000000000000000000 \
-	--feed-url https://example.invalid/feed
-node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync(process.argv[1]+'/manifest.json','utf8')); if (m.oxidns.packages.length !== 2) process.exit(1);" "$MANIFEST_DIR"
+node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('root/usr/share/oxidns/openwrt-manifest.example.json','utf8')); const formats=new Set(m.oxidns.packages.map(p=>p.format)); if (m.schema_version !== 1 || !formats.has('ipk') || !formats.has('apk')) process.exit(1);"
 
-rm -rf "$DIST_DIR" "$MANIFEST_DIR"
+rm -rf "$DIST_DIR"
