@@ -46,12 +46,14 @@ Install the LuCI package from a release artifact:
 
 ```sh
 opkg install luci-app-oxidns_0.1.0-r1_all.ipk
+opkg install luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk
 ```
 
 or on OpenWrt systems using `apk`:
 
 ```sh
 apk add --allow-untrusted luci-app-oxidns_0.1.0-r1_all.apk
+apk add --allow-untrusted luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
 ```
 
 Restart `rpcd` after installation if the OxiDNS menu is not visible:
@@ -61,6 +63,11 @@ Restart `rpcd` after installation if the OxiDNS menu is not visible:
 ```
 
 Then open LuCI and go to `Services -> OxiDNS`.
+
+The Simplified Chinese UI is provided by the optional
+`luci-i18n-oxidns-zh-cn` package. The OpenWrt SDK builds this package from
+`po/zh_Hans/oxidns.po`; the local release script also emits matching `ipk` and
+`apk` artifacts.
 
 ## Package Feed
 
@@ -159,7 +166,8 @@ core release:
    log viewing on target OpenWrt images.
 
 The release workflow in this repository runs static checks, integration checks,
-builds `ipk` and `apk` LuCI artifacts, and publishes them to the GitHub release.
+builds `ipk` and `apk` LuCI artifacts, builds the Simplified Chinese
+`luci-i18n-oxidns-zh-cn` artifacts, and publishes them to the GitHub release.
 
 ## Supported Core Package Matrix
 

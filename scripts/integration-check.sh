@@ -22,7 +22,9 @@ scripts/build-luci-package.sh 0.1.0 "$DIST_DIR" >/dev/null
 ar t "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" | grep -q '^debian-binary/$'
 ar t "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" | grep -q '^control.tar.gz/$'
 ar t "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" | grep -q '^data.tar.gz/$'
+ar t "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" | grep -q '^data.tar.gz/$'
 tar -tzf "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" | grep -q './usr/libexec/rpcd/luci.oxidns'
+tar -tzf "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" | grep -q './usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo'
 
 MANIFEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-manifest.XXXXXX")"
 mkdir -p "$MANIFEST_DIR/ipk/x86_64" "$MANIFEST_DIR/apk/x86_64"
