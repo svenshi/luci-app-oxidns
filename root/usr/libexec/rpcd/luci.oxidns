@@ -457,38 +457,218 @@ download_file() {
 	fi
 }
 
+sha256_file() {
+	sha256sum "$1" 2>/dev/null | awk '{ print $1 }'
+}
+
+load_jshn() {
+	if [ -r /usr/share/libubox/jshn.sh ]; then
+		# shellcheck disable=SC1091
+		. /usr/share/libubox/jshn.sh
+		return 0
+	fi
+	return 1
+}
+
+select_manifest_package() {
+	MANIFEST_FILE="$1"
+	WANT_FORMAT="$2"
+	WANT_ARCH="$3"
+
+	SELECT_VERSION=""
+	SELECT_COMMIT=""
+	SELECT_BUNDLE=""
+	SELECT_FORMAT=""
+	SELECT_ARCH=""
+	SELECT_RUST_TARGET=""
+	SELECT_FILENAME=""
+	SELECT_URL=""
+	SELECT_SHA256=""
+	SELECT_SIZE=""
+
+	if ! load_jshn; then
+		return 2
+	fi
+
+	json_load "$(cat "$MANIFEST_FILE")" >/dev/null 2>&1 || return 1
+	json_select oxidns >/dev/null 2>&1 || return 1
+	json_get_var SELECT_VERSION version
+	json_get_var SELECT_COMMIT commit
+	json_get_var SELECT_BUNDLE bundle
+	json_select packages >/dev/null 2>&1 || return 1
+	json_get_keys PACKAGE_KEYS
+
+	for PACKAGE_KEY in $PACKAGE_KEYS; do
+		json_select "$PACKAGE_KEY" >/dev/null 2>&1 || continue
+		json_get_var PKG_FORMAT format
+		json_get_var PKG_ARCH openwrt_arch
+		json_get_var PKG_RUST_TARGET rust_target
+		json_get_var PKG_FILENAME filename
+		json_get_var PKG_URL url
+		json_get_var PKG_SHA256 sha256
+		json_get_var PKG_SIZE size
+		json_select .. >/dev/null 2>&1 || true
+
+		if [ "$PKG_FORMAT" = "$WANT_FORMAT" ] && [ "$PKG_ARCH" = "$WANT_ARCH" ]; then
+			SELECT_FORMAT="$PKG_FORMAT"
+			SELECT_ARCH="$PKG_ARCH"
+			SELECT_RUST_TARGET="$PKG_RUST_TARGET"
+			SELECT_FILENAME="$PKG_FILENAME"
+			SELECT_URL="$PKG_URL"
+			SELECT_SHA256="$PKG_SHA256"
+			SELECT_SIZE="$PKG_SIZE"
+			return 0
+		fi
+	done
+
+	return 1
+}
+
+download_manifest() {
+	URL="$1"
+	OUT="$2"
+	if ! download_file "$URL" "$OUT"; then
+		json_error "manifest_download_failed" "failed to download package manifest"
+		return 1
+	fi
+}
+
+emit_selected_package_json() {
+	printf '{'
+	printf '"format":'
+	json_string "$SELECT_FORMAT"
+	printf ',"openwrt_arch":'
+	json_string "$SELECT_ARCH"
+	printf ',"rust_target":'
+	json_string "$SELECT_RUST_TARGET"
+	printf ',"filename":'
+	json_string "$SELECT_FILENAME"
+	printf ',"url":'
+	json_string "$SELECT_URL"
+	printf ',"sha256":'
+	json_string "$SELECT_SHA256"
+	printf ',"size":'
+	json_string "$SELECT_SIZE"
+	printf '}'
+}
+
 emit_package_check_update() {
 	load_settings
 	INPUT="$(cat)"
 	URL="$(input_value manifest_url "$INPUT")"
 	[ -n "$URL" ] || URL="$MANIFEST_URL"
-	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-manifest.XXXXXX")"
-	if ! download_file "$URL" "$TMP_FILE"; then
-		rm -f "$TMP_FILE"
-		json_error "manifest_download_failed" "failed to download package manifest"
+	PM="$(detect_package_manager)"
+	FORMAT="$(package_format "$PM")"
+	ARCH="$(package_arch "$PM")"
+	if [ "$PM" = "none" ]; then
+		json_error "package_manager_unavailable" "opkg or apk not found"
 		return 1
 	fi
-	if command -v jsonfilter >/dev/null 2>&1; then
-		LATEST="$(jsonfilter -s "$(cat "$TMP_FILE")" -e '@.oxidns.version' 2>/dev/null || true)"
-	else
-		LATEST=""
+	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-manifest.XXXXXX")"
+	if ! download_manifest "$URL" "$TMP_FILE"; then
+		rm -f "$TMP_FILE"
+		return 1
+	fi
+
+	if ! select_manifest_package "$TMP_FILE" "$FORMAT" "$ARCH"; then
+		rm -f "$TMP_FILE"
+		if [ "$PM" = "none" ]; then
+			json_error "package_manager_unavailable" "opkg or apk not found"
+		else
+			json_error "package_not_found" "no package matches current package manager and architecture"
+		fi
+		return 1
 	fi
 	rm -f "$TMP_FILE"
 	CURRENT="$(package_version "$(detect_package_manager)" || true)"
 	UPDATE=0
-	if [ -n "$LATEST" ] && [ "$LATEST" != "$CURRENT" ]; then UPDATE=1; fi
+	if [ -n "$SELECT_VERSION" ] && [ "$SELECT_VERSION" != "$CURRENT" ]; then UPDATE=1; fi
 	printf '{"ok":true,"current_version":'
 	json_string "$CURRENT"
 	printf ',"latest_version":'
-	json_string "$LATEST"
+	json_string "$SELECT_VERSION"
 	printf ',"update_available":'
 	json_bool "$UPDATE"
+	printf ',"package":'
+	emit_selected_package_json
 	printf '}\n'
 }
 
-emit_package_install_placeholder() {
-	json_error "not_implemented" "package install and upgrade require phase 4 package selection UI"
-	return 1
+emit_package_install() {
+	load_settings
+	INPUT="$(cat)"
+	ACTION="$1"
+	PM="$(detect_package_manager)"
+	FORMAT="$(package_format "$PM")"
+	ARCH="$(package_arch "$PM")"
+	URL="$(input_value url "$INPUT")"
+	EXPECTED_SHA256="$(input_value sha256 "$INPUT")"
+	MANIFEST_INPUT_URL="$(input_value manifest_url "$INPUT")"
+	[ -n "$MANIFEST_INPUT_URL" ] || MANIFEST_INPUT_URL="$MANIFEST_URL"
+
+	if [ "$PM" = "none" ]; then
+		json_error "package_manager_unavailable" "opkg or apk not found"
+		return 1
+	fi
+
+	if [ -z "$URL" ] || [ -z "$EXPECTED_SHA256" ]; then
+		MANIFEST_FILE="$(mktemp "$TMP_ROOT/oxidns-manifest.XXXXXX")"
+		if ! download_manifest "$MANIFEST_INPUT_URL" "$MANIFEST_FILE"; then
+			rm -f "$MANIFEST_FILE"
+			return 1
+		fi
+		if ! select_manifest_package "$MANIFEST_FILE" "$FORMAT" "$ARCH"; then
+			rm -f "$MANIFEST_FILE"
+			json_error "package_not_found" "no package matches current package manager and architecture"
+			return 1
+		fi
+		rm -f "$MANIFEST_FILE"
+		URL="$SELECT_URL"
+		EXPECTED_SHA256="$SELECT_SHA256"
+	fi
+
+	PKG_FILE="$(mktemp "$TMP_ROOT/oxidns-package.XXXXXX")"
+	if ! download_file "$URL" "$PKG_FILE"; then
+		rm -f "$PKG_FILE"
+		json_error "package_download_failed" "failed to download package"
+		return 1
+	fi
+
+	ACTUAL_SHA256="$(sha256_file "$PKG_FILE")"
+	if [ -z "$ACTUAL_SHA256" ] || [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+		rm -f "$PKG_FILE"
+		json_error "package_checksum_failed" "package SHA256 does not match manifest"
+		return 1
+	fi
+
+	case "$PM" in
+		opkg)
+			if opkg install "$PKG_FILE" >/tmp/luci-oxidns-package.out 2>&1; then
+				rm -f "$PKG_FILE"
+				printf '{"ok":true,"action":'
+				json_string "$ACTION"
+				printf '}\n'
+			else
+				MSG="$(cat /tmp/luci-oxidns-package.out 2>/dev/null || true)"
+				rm -f "$PKG_FILE"
+				json_error "package_install_failed" "${MSG:-opkg install failed}"
+				return 1
+			fi
+			;;
+		apk)
+			if apk add --allow-untrusted "$PKG_FILE" >/tmp/luci-oxidns-package.out 2>&1; then
+				rm -f "$PKG_FILE"
+				printf '{"ok":true,"action":'
+				json_string "$ACTION"
+				printf '}\n'
+			else
+				MSG="$(cat /tmp/luci-oxidns-package.out 2>/dev/null || true)"
+				rm -f "$PKG_FILE"
+				json_error "package_install_failed" "${MSG:-apk add failed}"
+				return 1
+			fi
+			;;
+	esac
 }
 
 emit_package_remove() {
@@ -550,8 +730,11 @@ case "${1:-}" in
 			package_check_update)
 				emit_package_check_update
 				;;
-			package_install|package_upgrade)
-				emit_package_install_placeholder
+			package_install)
+				emit_package_install install
+				;;
+			package_upgrade)
+				emit_package_install upgrade
 				;;
 			package_remove)
 				emit_package_remove
