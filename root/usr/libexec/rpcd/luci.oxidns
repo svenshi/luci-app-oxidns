@@ -2,33 +2,586 @@
 
 set -eu
 
-CONFIG_PATH="/etc/oxidns/config.yaml"
-WORKING_DIR="/var/lib/oxidns"
-SERVICE_NAME="oxidns"
+UCI_PACKAGE="oxidns"
+UCI_SECTION="main"
+OXIDNS_BIN="/usr/bin/oxidns"
+DEFAULT_CONFIG_PATH="/etc/oxidns/config.yaml"
+DEFAULT_WORKING_DIR="/var/lib/oxidns"
+DEFAULT_SERVICE_NAME="oxidns"
+DEFAULT_API_BASE_URL="http://127.0.0.1:9199/api"
+DEFAULT_MANIFEST_URL="https://svenshi.github.io/oxidns-openwrt-packages/manifest.json"
+TMP_ROOT="${TMPDIR:-/tmp}"
 
-json_escape() {
-	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+CONFIG_PATH="$DEFAULT_CONFIG_PATH"
+WORKING_DIR="$DEFAULT_WORKING_DIR"
+SERVICE_NAME="$DEFAULT_SERVICE_NAME"
+API_BASE_URL="$DEFAULT_API_BASE_URL"
+MANIFEST_URL="$DEFAULT_MANIFEST_URL"
+DOWNLOAD_PROXY=""
+GITHUB_TOKEN=""
+
+json_escape_stream() {
+	awk 'BEGIN { ORS = "" }
+	{
+		gsub(/\\/, "\\\\");
+		gsub(/"/, "\\\"");
+		gsub(/\t/, "\\t");
+		gsub(/\r/, "\\r");
+		if (NR > 1)
+			printf "\\n";
+		printf "%s", $0;
+	}'
 }
 
-print_status() {
+json_string() {
+	printf '"'
+	printf '%s' "$1" | json_escape_stream
+	printf '"'
+}
+
+json_file_string() {
+	printf '"'
+	if [ -r "$1" ]; then
+		json_escape_stream < "$1"
+	fi
+	printf '"'
+}
+
+json_bool() {
+	if [ "${1:-0}" = "1" ]; then
+		printf 'true'
+	else
+		printf 'false'
+	fi
+}
+
+json_error() {
+	printf '{'
+	printf '"ok":false,'
+	printf '"code":'
+	json_string "$1"
+	printf ',"message":'
+	json_string "$2"
+	printf '}\n'
+}
+
+uci_get() {
+	KEY="$1"
+	DEFAULT="$2"
+	if command -v uci >/dev/null 2>&1; then
+		uci -q get "$UCI_PACKAGE.$UCI_SECTION.$KEY" 2>/dev/null || printf '%s' "$DEFAULT"
+	else
+		printf '%s' "$DEFAULT"
+	fi
+}
+
+load_settings() {
+	SERVICE_NAME="$(uci_get service_name "$DEFAULT_SERVICE_NAME")"
+	CONFIG_PATH="$(uci_get config_path "$DEFAULT_CONFIG_PATH")"
+	WORKING_DIR="$(uci_get working_dir "$DEFAULT_WORKING_DIR")"
+	API_BASE_URL="$(uci_get api_base_url "$DEFAULT_API_BASE_URL")"
+	MANIFEST_URL="$(uci_get manifest_url "$DEFAULT_MANIFEST_URL")"
+	DOWNLOAD_PROXY="$(uci_get download_proxy '')"
+	GITHUB_TOKEN="$(uci_get github_token '')"
+}
+
+init_script() {
+	printf '/etc/init.d/%s' "$SERVICE_NAME"
+}
+
+detect_package_manager() {
+	if command -v apk >/dev/null 2>&1; then
+		printf 'apk'
+	elif command -v opkg >/dev/null 2>&1; then
+		printf 'opkg'
+	else
+		printf 'none'
+	fi
+}
+
+package_format() {
+	case "$1" in
+		apk) printf 'apk' ;;
+		opkg) printf 'ipk' ;;
+		*) printf 'none' ;;
+	esac
+}
+
+package_arch() {
+	PM="$1"
+	case "$PM" in
+		apk)
+			apk --print-arch 2>/dev/null || printf 'unknown'
+			;;
+		opkg)
+			opkg print-architecture 2>/dev/null |
+				awk '$1 == "arch" { arch = $2 } END { if (arch) print arch; else print "unknown" }'
+			;;
+		*)
+			printf 'unknown'
+			;;
+	esac
+}
+
+package_installed() {
+	PM="$1"
+	case "$PM" in
+		apk)
+			apk info -e oxidns >/dev/null 2>&1
+			;;
+		opkg)
+			opkg status oxidns 2>/dev/null | grep -q '^Status: .* installed'
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+package_version() {
+	PM="$1"
+	case "$PM" in
+		apk)
+			apk info -v oxidns 2>/dev/null | sed -n '1s/^oxidns-//p'
+			;;
+		opkg)
+			opkg status oxidns 2>/dev/null | sed -n 's/^Version: //p' | sed -n '1p'
+			;;
+	esac
+}
+
+service_enabled() {
+	INIT="$(init_script)"
+	[ -x "$INIT" ] && "$INIT" enabled >/dev/null 2>&1
+}
+
+service_running() {
+	INIT="$(init_script)"
+	if [ -x "$INIT" ] && "$INIT" status >/dev/null 2>&1; then
+		return 0
+	fi
+	if command -v pgrep >/dev/null 2>&1 && pgrep -x oxidns >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
+
+api_fetch() {
+	PATH_PART="$1"
+	URL="${API_BASE_URL%/}/$PATH_PART"
+	if command -v uclient-fetch >/dev/null 2>&1; then
+		uclient-fetch -q -T 2 -O - "$URL" 2>/dev/null
+	elif command -v wget >/dev/null 2>&1; then
+		wget -q -T 2 -O - "$URL" 2>/dev/null
+	elif command -v curl >/dev/null 2>&1; then
+		curl -fsS --max-time 2 "$URL" 2>/dev/null
+	else
+		return 1
+	fi
+}
+
+api_post_empty() {
+	PATH_PART="$1"
+	URL="${API_BASE_URL%/}/$PATH_PART"
+	if command -v uclient-fetch >/dev/null 2>&1; then
+		uclient-fetch -q -T 5 --post-data '' -O - "$URL" 2>/dev/null
+	elif command -v wget >/dev/null 2>&1; then
+		wget -q -T 5 --post-data '' -O - "$URL" 2>/dev/null
+	elif command -v curl >/dev/null 2>&1; then
+		curl -fsS --max-time 5 -X POST "$URL" 2>/dev/null
+	else
+		return 1
+	fi
+}
+
+build_info_json() {
+	if [ -x "$OXIDNS_BIN" ]; then
+		"$OXIDNS_BIN" build-info 2>/dev/null || true
+	fi
+}
+
+emit_package_manager() {
+	PM="$(detect_package_manager)"
+	FORMAT="$(package_format "$PM")"
+	ARCH="$(package_arch "$PM")"
+	printf '{'
+	printf '"ok":true,'
+	printf '"manager":'
+	json_string "$PM"
+	printf ',"format":'
+	json_string "$FORMAT"
+	printf ',"arch":'
+	json_string "$ARCH"
+	printf '}\n'
+}
+
+emit_status() {
+	load_settings
+	PM="$(detect_package_manager)"
+	FORMAT="$(package_format "$PM")"
+	ARCH="$(package_arch "$PM")"
+	INSTALLED=0
+	ENABLED=0
+	RUNNING=0
+	API_OK=0
+	PKG_VERSION="$(package_version "$PM" || true)"
+	BUILD_JSON="$(build_info_json)"
+
+	if package_installed "$PM"; then INSTALLED=1; fi
+	if service_enabled; then ENABLED=1; fi
+	if service_running; then RUNNING=1; fi
+	if api_fetch readyz >/dev/null 2>&1; then API_OK=1; fi
+
 	printf '{'
 	printf '"ok":true,'
 	printf '"backend":"rpcd",'
-	printf '"install_mode":"package",'
-	printf '"service":"%s",' "$(json_escape "$SERVICE_NAME")"
-	printf '"config_path":"%s",' "$(json_escape "$CONFIG_PATH")"
-	printf '"working_dir":"%s"' "$(json_escape "$WORKING_DIR")"
+	printf '"install_mode":'
+	json_string "$(uci_get install_mode package)"
+	printf ',"binary_path":'
+	json_string "$OXIDNS_BIN"
+	printf ',"binary_present":'
+	json_bool "$([ -x "$OXIDNS_BIN" ] && printf 1 || printf 0)"
+	printf ',"service":'
+	json_string "$SERVICE_NAME"
+	printf ',"config_path":'
+	json_string "$CONFIG_PATH"
+	printf ',"working_dir":'
+	json_string "$WORKING_DIR"
+	printf ',"api_base_url":'
+	json_string "$API_BASE_URL"
+	printf ',"package_manager":{"manager":'
+	json_string "$PM"
+	printf ',"format":'
+	json_string "$FORMAT"
+	printf ',"arch":'
+	json_string "$ARCH"
+	printf '}'
+	printf ',"package":{"installed":'
+	json_bool "$INSTALLED"
+	printf ',"version":'
+	json_string "$PKG_VERSION"
+	printf '}'
+	printf ',"service_status":{"running":'
+	json_bool "$RUNNING"
+	printf ',"enabled":'
+	json_bool "$ENABLED"
+	printf ',"init_script":'
+	json_string "$(init_script)"
+	printf '}'
+	printf ',"api":{"ready":'
+	json_bool "$API_OK"
+	printf '}'
+	printf ',"build":'
+	if printf '%s' "$BUILD_JSON" | grep -q '^{'; then
+		printf '%s' "$BUILD_JSON"
+	else
+		printf 'null'
+	fi
 	printf '}\n'
+}
+
+run_service() {
+	load_settings
+	ACTION="$1"
+	INIT="$(init_script)"
+	if [ ! -x "$INIT" ]; then
+		json_error "service_unavailable" "init script not found: $INIT"
+		return 1
+	fi
+	if "$INIT" "$ACTION" >/tmp/luci-oxidns-service.out 2>&1; then
+		printf '{"ok":true,"action":'
+		json_string "$ACTION"
+		printf '}\n'
+	else
+		MSG="$(cat /tmp/luci-oxidns-service.out 2>/dev/null || true)"
+		json_error "service_failed" "${MSG:-service action failed}"
+		return 1
+	fi
+}
+
+stat_mtime() {
+	stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || printf ''
+}
+
+emit_config_read() {
+	load_settings
+	if [ ! -r "$CONFIG_PATH" ]; then
+		json_error "config_not_found" "configuration file not found"
+		return 1
+	fi
+	printf '{'
+	printf '"ok":true,'
+	printf '"path":'
+	json_string "$CONFIG_PATH"
+	printf ',"mtime":'
+	json_string "$(stat_mtime "$CONFIG_PATH")"
+	printf ',"content":'
+	json_file_string "$CONFIG_PATH"
+	printf '}\n'
+}
+
+input_value() {
+	KEY="$1"
+	INPUT="$2"
+	if command -v jsonfilter >/dev/null 2>&1; then
+		printf '%s' "$INPUT" | jsonfilter -e "@.$KEY" 2>/dev/null || true
+	else
+		printf '%s' "$INPUT" | sed -n "s/.*\"$KEY\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p"
+	fi
+}
+
+validate_config_file() {
+	FILE="$1"
+	load_settings
+	if [ ! -x "$OXIDNS_BIN" ]; then
+		printf 'oxidns binary not found or not executable: %s' "$OXIDNS_BIN"
+		return 1
+	fi
+	mkdir -p "$WORKING_DIR"
+	"$OXIDNS_BIN" check -c "$FILE" -d "$WORKING_DIR" 2>&1
+}
+
+emit_config_validate() {
+	INPUT="$(cat)"
+	CONTENT="$(input_value content "$INPUT")"
+	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-config.XXXXXX")"
+	if [ -n "$CONTENT" ]; then
+		printf '%s' "$CONTENT" > "$TMP_FILE"
+	elif [ -r "$CONFIG_PATH" ]; then
+		cp "$CONFIG_PATH" "$TMP_FILE"
+	else
+		rm -f "$TMP_FILE"
+		json_error "config_missing" "no configuration content or file available"
+		return 1
+	fi
+	if OUTPUT="$(validate_config_file "$TMP_FILE")"; then
+		rm -f "$TMP_FILE"
+		printf '{"ok":true,"message":'
+		json_string "${OUTPUT:-configuration is valid}"
+		printf '}\n'
+	else
+		rm -f "$TMP_FILE"
+		json_error "config_invalid" "$OUTPUT"
+		return 1
+	fi
+}
+
+emit_config_save() {
+	load_settings
+	INPUT="$(cat)"
+	CONTENT="$(input_value content "$INPUT")"
+	BASE_MTIME="$(input_value base_mtime "$INPUT")"
+	RELOAD="$(input_value reload "$INPUT")"
+
+	if [ -z "$CONTENT" ]; then
+		json_error "missing_content" "configuration content is required"
+		return 1
+	fi
+	if [ -n "$BASE_MTIME" ] && [ -e "$CONFIG_PATH" ] && [ "$BASE_MTIME" != "$(stat_mtime "$CONFIG_PATH")" ]; then
+		json_error "config_conflict" "configuration file changed since it was loaded"
+		return 1
+	fi
+
+	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-config.XXXXXX")"
+	printf '%s' "$CONTENT" > "$TMP_FILE"
+	if ! OUTPUT="$(validate_config_file "$TMP_FILE")"; then
+		rm -f "$TMP_FILE"
+		json_error "config_invalid" "$OUTPUT"
+		return 1
+	fi
+
+	mkdir -p "$(dirname "$CONFIG_PATH")"
+	if [ -e "$CONFIG_PATH" ]; then
+		mkdir -p "$WORKING_DIR/config-backups"
+		cp "$CONFIG_PATH" "$WORKING_DIR/config-backups/config.yaml.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
+	fi
+	mv "$TMP_FILE" "$CONFIG_PATH"
+
+	RELOAD_STATUS="not_requested"
+	if [ "$RELOAD" = "true" ] || [ "$RELOAD" = "1" ]; then
+		if api_post_empty reload >/dev/null 2>&1; then
+			RELOAD_STATUS="requested"
+		else
+			RELOAD_STATUS="failed"
+		fi
+	fi
+
+	printf '{"ok":true,"path":'
+	json_string "$CONFIG_PATH"
+	printf ',"mtime":'
+	json_string "$(stat_mtime "$CONFIG_PATH")"
+	printf ',"reload":'
+	json_string "$RELOAD_STATUS"
+	printf '}\n'
+}
+
+emit_logs_recent() {
+	INPUT="$(cat)"
+	LIMIT="$(input_value limit "$INPUT")"
+	[ -n "$LIMIT" ] || LIMIT=200
+	case "$LIMIT" in
+		*[!0-9]*|'') LIMIT=200 ;;
+	esac
+	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-logs.XXXXXX")"
+	if command -v logread >/dev/null 2>&1; then
+		logread 2>/dev/null | grep -i 'oxidns' | tail -n "$LIMIT" > "$TMP_FILE" || true
+	else
+		: > "$TMP_FILE"
+	fi
+	printf '{"ok":true,"source":"logread","lines":['
+	SEP=""
+	while IFS= read -r LINE; do
+		printf '%s' "$SEP"
+		json_string "$LINE"
+		SEP=","
+	done < "$TMP_FILE"
+	printf ']}\n'
+	rm -f "$TMP_FILE"
+}
+
+download_file() {
+	URL="$1"
+	OUT="$2"
+	if command -v uclient-fetch >/dev/null 2>&1; then
+		uclient-fetch -q -O "$OUT" "$URL"
+	elif command -v wget >/dev/null 2>&1; then
+		wget -q -O "$OUT" "$URL"
+	elif command -v curl >/dev/null 2>&1; then
+		if [ -n "$DOWNLOAD_PROXY" ]; then
+			curl -fsSL --proxy "$DOWNLOAD_PROXY" -o "$OUT" "$URL"
+		else
+			curl -fsSL -o "$OUT" "$URL"
+		fi
+	else
+		return 1
+	fi
+}
+
+emit_package_check_update() {
+	load_settings
+	INPUT="$(cat)"
+	URL="$(input_value manifest_url "$INPUT")"
+	[ -n "$URL" ] || URL="$MANIFEST_URL"
+	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-manifest.XXXXXX")"
+	if ! download_file "$URL" "$TMP_FILE"; then
+		rm -f "$TMP_FILE"
+		json_error "manifest_download_failed" "failed to download package manifest"
+		return 1
+	fi
+	if command -v jsonfilter >/dev/null 2>&1; then
+		LATEST="$(jsonfilter -s "$(cat "$TMP_FILE")" -e '@.oxidns.version' 2>/dev/null || true)"
+	else
+		LATEST=""
+	fi
+	rm -f "$TMP_FILE"
+	CURRENT="$(package_version "$(detect_package_manager)" || true)"
+	UPDATE=0
+	if [ -n "$LATEST" ] && [ "$LATEST" != "$CURRENT" ]; then UPDATE=1; fi
+	printf '{"ok":true,"current_version":'
+	json_string "$CURRENT"
+	printf ',"latest_version":'
+	json_string "$LATEST"
+	printf ',"update_available":'
+	json_bool "$UPDATE"
+	printf '}\n'
+}
+
+emit_package_install_placeholder() {
+	json_error "not_implemented" "package install and upgrade require phase 4 package selection UI"
+	return 1
+}
+
+emit_package_remove() {
+	load_settings
+	PM="$(detect_package_manager)"
+	run_service stop >/dev/null 2>&1 || true
+	case "$PM" in
+		opkg)
+			if opkg remove oxidns >/tmp/luci-oxidns-package.out 2>&1; then
+				printf '{"ok":true,"action":"remove"}\n'
+			else
+				json_error "package_remove_failed" "$(cat /tmp/luci-oxidns-package.out 2>/dev/null || true)"
+				return 1
+			fi
+			;;
+		apk)
+			if apk del oxidns >/tmp/luci-oxidns-package.out 2>&1; then
+				printf '{"ok":true,"action":"remove"}\n'
+			else
+				json_error "package_remove_failed" "$(cat /tmp/luci-oxidns-package.out 2>/dev/null || true)"
+				return 1
+			fi
+			;;
+		*)
+			json_error "package_manager_unavailable" "opkg or apk not found"
+			return 1
+			;;
+	esac
 }
 
 case "${1:-}" in
 	list)
-		printf '{"status":{}}\n'
+		printf '{'
+		printf '"status":{},'
+		printf '"package_manager":{},'
+		printf '"package_check_update":{"manifest_url":"string"},'
+		printf '"package_install":{"url":"string","sha256":"string"},'
+		printf '"package_upgrade":{"url":"string","sha256":"string"},'
+		printf '"package_remove":{},'
+		printf '"service_start":{},'
+		printf '"service_stop":{},'
+		printf '"service_restart":{},'
+		printf '"service_enable":{},'
+		printf '"service_disable":{},'
+		printf '"config_read":{},'
+		printf '"config_validate":{"content":"string"},'
+		printf '"config_save":{"content":"string","base_mtime":"string","reload":"boolean"},'
+		printf '"logs_recent":{"limit":"number"}'
+		printf '}\n'
 		;;
 	call)
 		case "${2:-}" in
 			status)
-				print_status
+				emit_status
+				;;
+			package_manager)
+				emit_package_manager
+				;;
+			package_check_update)
+				emit_package_check_update
+				;;
+			package_install|package_upgrade)
+				emit_package_install_placeholder
+				;;
+			package_remove)
+				emit_package_remove
+				;;
+			service_start)
+				run_service start
+				;;
+			service_stop)
+				run_service stop
+				;;
+			service_restart)
+				run_service restart
+				;;
+			service_enable)
+				run_service enable
+				;;
+			service_disable)
+				run_service disable
+				;;
+			config_read)
+				emit_config_read
+				;;
+			config_validate)
+				emit_config_validate
+				;;
+			config_save)
+				emit_config_save
+				;;
+			logs_recent)
+				emit_logs_recent
 				;;
 			*)
 				printf '{"ok":false,"error":"unknown method"}\n'

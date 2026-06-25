@@ -3,12 +3,29 @@
 		"description": "Grant access to the OxiDNS LuCI app",
 		"read": {
 			"ubus": {
-				"luci.oxidns": [ "status" ]
+				"luci.oxidns": [
+					"status",
+					"package_manager",
+					"package_check_update",
+					"config_read",
+					"config_validate",
+					"logs_recent"
+				]
 			}
 		},
 		"write": {
 			"ubus": {
-				"luci.oxidns": [ "status" ]
+				"luci.oxidns": [
+					"package_install",
+					"package_upgrade",
+					"package_remove",
+					"service_start",
+					"service_stop",
+					"service_restart",
+					"service_enable",
+					"service_disable",
+					"config_save"
+				]
 			}
 		}
 	}
