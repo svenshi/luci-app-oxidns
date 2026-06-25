@@ -1,81 +1,63 @@
 # luci-app-oxidns
 
-LuCI management application for OxiDNS on OpenWrt.
+语言：中文 | [English](./README.en.md)
 
-This project provides the OpenWrt-native control plane for OxiDNS:
+`luci-app-oxidns` 是 OxiDNS 在 OpenWrt / LuCI 上的管理插件。它提供 OpenWrt 原生的 Web 管理入口，用于管理通过系统包管理器安装的 `oxidns` 运行时。
 
-- package-managed OxiDNS installation and upgrades;
-- procd service management;
-- YAML configuration viewing, validation, and saving;
-- runtime log viewing;
-- top-level basic configuration controls.
+本插件不内置 OxiDNS 二进制。OxiDNS 内核应通过 OpenWrt 包管理器以 `oxidns` 包的形式安装，默认使用 full 版本。
 
-The LuCI app does not embed the OxiDNS binary. The OxiDNS runtime is expected to
-be installed through the OpenWrt package manager as the `oxidns` package.
+## 仓库职责
 
-## Runtime Model
+`luci-app-oxidns` 与 OxiDNS 核心和 OpenWrt 内核包仓库保持分离：
 
-`luci-app-oxidns` is intentionally separate from the OxiDNS core package:
+- `svenshi/oxidns`：OxiDNS Rust 核心源码、通用 release、通用二进制、Docker 等。
+- `svenshi/oxidns-openwrt-packages`：OpenWrt `oxidns` 内核包、package feed、manifest、checksums。
+- `svenshi/luci-app-oxidns`：LuCI 管理插件、rpcd 后端、LuCI 包。
 
-- `svenshi/oxidns` publishes the core source release and generic artifacts.
-- `svenshi/oxidns-openwrt-packages` builds OpenWrt `oxidns` packages and the
-  package manifest consumed by this LuCI app.
-- `svenshi/luci-app-oxidns` publishes the LuCI management package.
+默认运行方式是通过 OpenWrt package feed 安装 package-managed 的 OxiDNS full bundle。裸二进制模式只作为高级回退，不是默认路径。
 
-The default runtime installation is the `oxidns` full bundle from the OpenWrt
-package feed. Bare binary management is only an advanced fallback and is not the
-default LuCI path.
+## 主要功能
 
-## Features
+- 总览页：展示包状态、二进制状态、服务状态、API 状态、配置路径和日志状态。
+- 服务管理：启动、停止、重启、启用自启、禁用自启。
+- 内核包管理：通过 `opkg` 或 `apk` 检查更新、安装、升级和删除 `oxidns`。
+- 配置管理：查看、校验、保存、备份、重载、上传、下载和恢复默认配置。
+- 基础配置：只编辑安全的顶层基础字段。
+- 日志查看：刷新、暂停、继续、过滤、搜索、复制和清空前端显示。
+- 插件设置：manifest/feed URL、代理、API 地址、配置路径、工作目录和可选 GitHub Token。
+- 国际化：提供简体中文语言包 `luci-i18n-oxidns-zh-cn`。
 
-- Overview page with package, binary, service, API, config, and log status.
-- Service actions: start, stop, restart, enable, and disable.
-- Core package actions: check update, install, upgrade, and remove through
-  `opkg` or `apk`.
-- Configuration editor with read, validate, save, backup, reload, upload,
-  download, and default-template actions.
-- Basic configuration form for safe top-level fields only.
-- Runtime log viewer with refresh, pause/resume, filtering, search, copy, and
-  clear-front-end-display actions.
-- LuCI settings for manifest/feed URLs, proxy URL, API endpoint, config path,
-  work directory, and optional GitHub token.
+## 安装
 
-## Install
-
-Install the LuCI package from a release artifact:
+从 release artifact 安装 LuCI 插件：
 
 ```sh
 opkg install luci-app-oxidns_0.1.0-r1_all.ipk
 opkg install luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk
 ```
 
-or on OpenWrt systems using `apk`:
+在使用 `apk` 的 OpenWrt 系统上：
 
 ```sh
 apk add --allow-untrusted luci-app-oxidns_0.1.0-r1_all.apk
 apk add --allow-untrusted luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
 ```
 
-Restart `rpcd` after installation if the OxiDNS menu is not visible:
+如果安装后 LuCI 菜单未出现，重启 `rpcd`：
 
 ```sh
 /etc/init.d/rpcd restart
 ```
 
-Then open LuCI and go to `Services -> OxiDNS`.
+然后在 LuCI 中打开 `Services -> OxiDNS`。
 
-The Simplified Chinese UI is provided by the optional
-`luci-i18n-oxidns-zh-cn` package. The OpenWrt SDK builds this package from
-`po/zh_Hans/oxidns.po`; the local release script also emits matching `ipk` and
-`apk` artifacts.
+简体中文界面由可选语言包 `luci-i18n-oxidns-zh-cn` 提供。OpenWrt SDK 会从 `po/zh_Hans/oxidns.po` 构建该语言包；本仓库本地 release 脚本也会生成对应的 `ipk` 和 `apk`。
 
 ## Package Feed
 
-The OxiDNS core should be installed from the self-maintained OpenWrt package
-feed. Replace the URL below with the feed published by
-`svenshi/oxidns-openwrt-packages`.
+OxiDNS 内核应从自维护 OpenWrt package feed 安装。将下面的 URL 替换为 `svenshi/oxidns-openwrt-packages` 发布的真实 feed。
 
-For `opkg`:
+`opkg`：
 
 ```sh
 echo 'src/gz oxidns https://example.com/oxidns/openwrt/packages' >> /etc/opkg/customfeeds.conf
@@ -83,7 +65,7 @@ opkg update
 opkg install oxidns
 ```
 
-For `apk`:
+`apk`：
 
 ```sh
 echo 'https://example.com/oxidns/openwrt/packages' >> /etc/apk/repositories
@@ -91,50 +73,45 @@ apk update
 apk add oxidns
 ```
 
-The LuCI core package page can also install or upgrade `oxidns` when the package
-manifest URL is configured in `Services -> OxiDNS -> Settings`.
+配置 manifest URL 后，LuCI 的内核包管理页面也可以安装或升级 `oxidns`。
 
-## Upgrade And Remove
+## 升级与删除
 
-Upgrade the LuCI package by installing a newer `luci-app-oxidns` artifact or by
-upgrading it from the configured package feed.
+升级 LuCI 插件时，安装新的 `luci-app-oxidns` artifact，或从已配置的 package feed 升级。
 
-Upgrade the OxiDNS core from LuCI or with the system package manager:
+升级 OxiDNS 内核：
 
 ```sh
 opkg update
 opkg upgrade oxidns
 ```
 
-or:
+或：
 
 ```sh
 apk update
 apk upgrade oxidns
 ```
 
-Removing `oxidns` should preserve `/etc/oxidns/config.yaml` and
-`/var/lib/oxidns` by default. The LuCI package can remain installed and will
-show the core as not installed.
+删除 `oxidns` 默认应保留 `/etc/oxidns/config.yaml` 和 `/var/lib/oxidns`。LuCI 插件可以继续保留安装状态，并显示内核未安装。
 
-## Build
+## 构建
 
-Build from an OpenWrt buildroot or SDK with the LuCI feed available:
+在已启用 LuCI feed 的 OpenWrt buildroot 或 SDK 中构建：
 
 ```sh
 make package/luci-app-oxidns/compile V=s
 ```
 
-When developing as an external package, place or symlink this repository under
-the OpenWrt package tree and ensure `$(TOPDIR)/feeds/luci/luci.mk` exists.
+作为外部包开发时，将本仓库放置或软链接到 OpenWrt package tree，并确保 `$(TOPDIR)/feeds/luci/luci.mk` 存在。
 
-Local package artifacts can be produced without an SDK for CI smoke testing:
+不依赖 SDK 的本地 smoke build：
 
 ```sh
 scripts/build-luci-package.sh 0.1.0 dist
 ```
 
-Run the local validation suite:
+本地验证：
 
 ```sh
 scripts/check.sh
@@ -142,52 +119,40 @@ scripts/integration-check.sh
 scripts/release-check.sh 0.1.0 dist
 ```
 
-## Default Runtime Paths
+## 默认运行路径
 
-- Binary: `/usr/bin/oxidns`
-- Config: `/etc/oxidns/config.yaml`
-- Working directory: `/var/lib/oxidns`
-- Init script: `/etc/init.d/oxidns`
+- 二进制：`/usr/bin/oxidns`
+- 配置：`/etc/oxidns/config.yaml`
+- 工作目录：`/var/lib/oxidns`
+- Init 脚本：`/etc/init.d/oxidns`
 
-## Release Flow
+## 发布流程
 
-The recommended release flow keeps OpenWrt package artifacts out of the OxiDNS
-core release:
+推荐发布流程会把 OpenWrt 内核包从 OxiDNS 主仓库 release 中拆出来，避免主仓库 release asset 膨胀：
 
-1. Tag `svenshi/oxidns` with the core version.
-2. Trigger `svenshi/oxidns-openwrt-packages` through `repository_dispatch` or
-   `workflow_dispatch`.
-3. Build package-managed OxiDNS full-bundle `ipk` and `apk` artifacts in the
-   OpenWrt package repository.
-4. Publish `manifest.json`, `latest.json`, and `sha256sums.txt` from the package
-   repository or feed.
-5. Tag `svenshi/luci-app-oxidns` to publish the LuCI package.
-6. Update the package feed and verify install, service start, config save, and
-   log viewing on target OpenWrt images.
+1. 在 `svenshi/oxidns` 发布核心版本 tag。
+2. 通过 `repository_dispatch` 或 `workflow_dispatch` 触发 `svenshi/oxidns-openwrt-packages`。
+3. 在 OpenWrt package 仓库中构建 OxiDNS full bundle 的 `ipk` 和 `apk`。
+4. 从 package 仓库或 feed 发布 `manifest.json`、`latest.json` 和 `sha256sums.txt`。
+5. 在 `svenshi/luci-app-oxidns` 发布 LuCI 插件 tag。
+6. 更新 package feed，并在目标 OpenWrt 镜像上验证安装、服务启动、配置保存和日志查看。
 
-The release workflow in this repository runs static checks, integration checks,
-builds `ipk` and `apk` LuCI artifacts, builds the Simplified Chinese
-`luci-i18n-oxidns-zh-cn` artifacts, and publishes them to the GitHub release.
+本仓库的 release workflow 会运行静态检查、集成检查，构建 LuCI `ipk` / `apk`，构建简体中文 `luci-i18n-oxidns-zh-cn` artifact，并发布到 GitHub Release。
 
-## Supported Core Package Matrix
+## 首版内核包矩阵
 
-The first OpenWrt core package matrix targets:
+首版 OpenWrt 内核包矩阵目标：
 
 - `x86_64-unknown-linux-musl`
 - `aarch64-unknown-linux-musl`
 - `i686-unknown-linux-musl`
 - `arm-unknown-linux-musleabihf`
 
-Package selection is based on the OpenWrt package manager, package architecture,
-and the manifest generated by `oxidns-openwrt-packages`.
+包选择基于 OpenWrt 包管理器、包架构，以及 `oxidns-openwrt-packages` 生成的 manifest。
 
-## Known Limitations
+## 已知限制
 
-- The basic configuration form only edits top-level safe fields. It does not
-  edit `plugins` entries or plugin arguments.
-- OxiDNS API log reading is preferred, but the log page falls back to `logread`
-  when the API is unavailable.
-- Local CI package checks do not replace final verification on real OpenWrt
-  `opkg` and `apk` targets.
-- Bare binary mode is an advanced fallback and is not the default install,
-  upgrade, or remove path.
+- 基础配置表单只编辑顶层安全字段，不编辑 `plugins` 条目或插件参数。
+- 日志页优先读取 OxiDNS API 日志；API 不可用时回退到 `logread`。
+- 本地 CI package 检查不能替代真实 OpenWrt `opkg` 和 `apk` 目标验证。
+- 裸二进制模式仅为高级回退，不是默认安装、升级或删除路径。
