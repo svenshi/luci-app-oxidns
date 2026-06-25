@@ -10,6 +10,7 @@
 					"config_read",
 					"config_validate",
 					"config_basic_read",
+					"settings_read",
 					"logs_recent"
 				]
 			}
@@ -26,7 +27,8 @@
 					"service_enable",
 					"service_disable",
 					"config_save",
-					"config_basic_save"
+					"config_basic_save",
+					"settings_save"
 				]
 			}
 		}
