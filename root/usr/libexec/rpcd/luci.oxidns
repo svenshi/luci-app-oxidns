@@ -598,6 +598,31 @@ emit_logs_recent() {
 		*[!0-9]*|'') LIMIT=200 ;;
 	esac
 	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-logs.XXXXXX")"
+	if API_LOGS="$(api_fetch "logs?limit=$LIMIT")" && load_jshn; then
+		if json_load "$API_LOGS" >/dev/null 2>&1 && json_select entries >/dev/null 2>&1; then
+			json_get_keys LOG_KEYS
+			: > "$TMP_FILE"
+			for LOG_KEY in $LOG_KEYS; do
+				json_select "$LOG_KEY" >/dev/null 2>&1 || continue
+				json_get_var LOG_TS timestamp
+				json_get_var LOG_LEVEL level
+				json_get_var LOG_TARGET target
+				json_get_var LOG_MESSAGE message
+				json_select .. >/dev/null 2>&1 || true
+				printf '%s [%s] %s %s\n' "$LOG_TS" "$LOG_LEVEL" "$LOG_TARGET" "$LOG_MESSAGE" >> "$TMP_FILE"
+			done
+			printf '{"ok":true,"source":"api","lines":['
+			SEP=""
+			while IFS= read -r LINE; do
+				printf '%s' "$SEP"
+				json_string "$LINE"
+				SEP=","
+			done < "$TMP_FILE"
+			printf ']}\n'
+			rm -f "$TMP_FILE"
+			return 0
+		fi
+	fi
 	if command -v logread >/dev/null 2>&1; then
 		logread 2>/dev/null | grep -i 'oxidns' | tail -n "$LIMIT" > "$TMP_FILE" || true
 	else

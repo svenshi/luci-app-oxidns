@@ -41,5 +41,16 @@
 		"depends": {
 			"acl": [ "luci-app-oxidns" ]
 		}
+	},
+	"admin/services/oxidns/logs": {
+		"title": "Logs",
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "oxidns/logs"
+		},
+		"depends": {
+			"acl": [ "luci-app-oxidns" ]
+		}
 	}
 }
