@@ -30,5 +30,16 @@
 		"depends": {
 			"acl": [ "luci-app-oxidns" ]
 		}
+	},
+	"admin/services/oxidns/config": {
+		"title": "Configuration",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "oxidns/config"
+		},
+		"depends": {
+			"acl": [ "luci-app-oxidns" ]
+		}
 	}
 }
