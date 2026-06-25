@@ -35,11 +35,8 @@ jobs:
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run static checks
-        run: scripts/check.sh
-
-      - name: Build LuCI packages
-        run: scripts/build-luci-package.sh "${{ steps.version.outputs.value }}" dist
+      - name: Run release checks and build packages
+        run: scripts/release-check.sh "${{ steps.version.outputs.value }}" dist
 
       - name: Publish release
         uses: softprops/action-gh-release@v3
