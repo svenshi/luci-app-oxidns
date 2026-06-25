@@ -6,6 +6,7 @@ VERSION="${1:-${VERSION:-0.1.0}}"
 OUT_DIR="${2:-${OUT_DIR:-dist}}"
 PKG_VERSION="$(printf '%s' "$VERSION" | sed 's/^v//')"
 PKG_BASE="luci-app-oxidns_${PKG_VERSION}-r1_all"
+I18N_BASE="luci-i18n-oxidns-zh-cn_${PKG_VERSION}-r1_all"
 
 need_cmd() {
 	command -v "$1" >/dev/null 2>&1 || {
@@ -26,7 +27,9 @@ scripts/build-luci-package.sh "$VERSION" "$OUT_DIR"
 ar t "$OUT_DIR/${PKG_BASE}.ipk" | grep -q '^debian-binary/$'
 ar t "$OUT_DIR/${PKG_BASE}.ipk" | grep -q '^control.tar.gz/$'
 ar t "$OUT_DIR/${PKG_BASE}.ipk" | grep -q '^data.tar.gz/$'
+ar t "$OUT_DIR/${I18N_BASE}.ipk" | grep -q '^data.tar.gz/$'
 tar -tzf "$OUT_DIR/${PKG_BASE}.apk" | grep -q './usr/libexec/rpcd/luci.oxidns'
+tar -tzf "$OUT_DIR/${I18N_BASE}.apk" | grep -q './usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo'
 sha256sum -c "$OUT_DIR/sha256sums.txt"
 
 printf 'Release check passed for %s in %s\n' "$VERSION" "$OUT_DIR"
