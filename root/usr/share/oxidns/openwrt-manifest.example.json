@@ -1,0 +1,34 @@
+{
+	"schema_version": 1,
+	"generated_at": "2026-06-25T00:00:00Z",
+	"feed_url": "https://svenshi.github.io/oxidns-openwrt-packages",
+	"oxidns": {
+		"version": "v1.4.0",
+		"commit": "0000000000000000000000000000000000000000",
+		"bundle": "full",
+		"packages": [
+			{
+				"format": "ipk",
+				"openwrt_arch": "x86_64",
+				"rust_target": "x86_64-unknown-linux-musl",
+				"filename": "oxidns_1.4.0_x86_64.ipk",
+				"url": "https://svenshi.github.io/oxidns-openwrt-packages/ipk/x86_64/oxidns_1.4.0_x86_64.ipk",
+				"sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+				"size": 12345678
+			},
+			{
+				"format": "apk",
+				"openwrt_arch": "x86_64",
+				"rust_target": "x86_64-unknown-linux-musl",
+				"filename": "oxidns-1.4.0-r1.apk",
+				"url": "https://svenshi.github.io/oxidns-openwrt-packages/apk/x86_64/oxidns-1.4.0-r1.apk",
+				"sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+				"size": 12345678
+			}
+		]
+	},
+	"luci_app": {
+		"version": "v0.1.0",
+		"min_oxidns": "v1.4.0"
+	}
+}

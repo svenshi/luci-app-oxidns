@@ -1,0 +1,108 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://svenshi.github.io/oxidns-openwrt-packages/openwrt-manifest.schema.json",
+	"title": "OxiDNS OpenWrt package manifest",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [ "schema_version", "generated_at", "oxidns" ],
+	"properties": {
+		"schema_version": {
+			"type": "integer",
+			"const": 1
+		},
+		"generated_at": {
+			"type": "string",
+			"format": "date-time"
+		},
+		"feed_url": {
+			"type": "string",
+			"format": "uri"
+		},
+		"oxidns": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [ "version", "commit", "bundle", "packages" ],
+			"properties": {
+				"version": {
+					"type": "string",
+					"pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-[A-Za-z0-9._-]+)?$"
+				},
+				"commit": {
+					"type": "string",
+					"pattern": "^[0-9a-fA-F]{40}$"
+				},
+				"bundle": {
+					"type": "string",
+					"enum": [ "full" ]
+				},
+				"packages": {
+					"type": "array",
+					"minItems": 1,
+					"items": {
+						"type": "object",
+						"additionalProperties": false,
+						"required": [
+							"format",
+							"openwrt_arch",
+							"rust_target",
+							"filename",
+							"url",
+							"sha256",
+							"size"
+						],
+						"properties": {
+							"format": {
+								"type": "string",
+								"enum": [ "ipk", "apk" ]
+							},
+							"openwrt_arch": {
+								"type": "string",
+								"minLength": 1
+							},
+							"rust_target": {
+								"type": "string",
+								"enum": [
+									"x86_64-unknown-linux-musl",
+									"aarch64-unknown-linux-musl",
+									"i686-unknown-linux-musl",
+									"arm-unknown-linux-musleabihf"
+								]
+							},
+							"filename": {
+								"type": "string",
+								"minLength": 1
+							},
+							"url": {
+								"type": "string",
+								"format": "uri"
+							},
+							"sha256": {
+								"type": "string",
+								"pattern": "^[0-9a-fA-F]{64}$"
+							},
+							"size": {
+								"type": "integer",
+								"minimum": 1
+							}
+						}
+					}
+				}
+			}
+		},
+		"luci_app": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [ "version", "min_oxidns" ],
+			"properties": {
+				"version": {
+					"type": "string",
+					"pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-[A-Za-z0-9._-]+)?$"
+				},
+				"min_oxidns": {
+					"type": "string",
+					"pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(-[A-Za-z0-9._-]+)?$"
+				}
+			}
+		}
+	}
+}

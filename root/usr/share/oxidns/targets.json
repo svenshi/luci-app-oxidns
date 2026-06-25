@@ -1,0 +1,25 @@
+{
+	"schema_version": 1,
+	"targets": [
+		{
+			"rust_target": "x86_64-unknown-linux-musl",
+			"openwrt_arches": [],
+			"aliases": [ "x86_64", "amd64" ]
+		},
+		{
+			"rust_target": "aarch64-unknown-linux-musl",
+			"openwrt_arches": [],
+			"aliases": [ "aarch64", "arm64" ]
+		},
+		{
+			"rust_target": "i686-unknown-linux-musl",
+			"openwrt_arches": [],
+			"aliases": [ "i386", "i686", "x86" ]
+		},
+		{
+			"rust_target": "arm-unknown-linux-musleabihf",
+			"openwrt_arches": [],
+			"aliases": [ "arm", "armv7", "armv7l" ]
+		}
+	]
+}
