@@ -9,6 +9,7 @@
 					"package_check_update",
 					"config_read",
 					"config_validate",
+					"config_basic_read",
 					"logs_recent"
 				]
 			}
@@ -24,7 +25,8 @@
 					"service_restart",
 					"service_enable",
 					"service_disable",
-					"config_save"
+					"config_save",
+					"config_basic_save"
 				]
 			}
 		}

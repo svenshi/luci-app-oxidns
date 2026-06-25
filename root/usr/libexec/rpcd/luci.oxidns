@@ -320,6 +320,119 @@ emit_config_read() {
 	printf '}\n'
 }
 
+yaml_scalar_clean() {
+	sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//; s/^'\''//; s/'\''$//'
+}
+
+basic_log_level() {
+	awk '
+		/^[^[:space:]#][^:]*:/ {
+			top = $0;
+			sub(/:.*/, "", top);
+		}
+		top == "log" && /^[[:space:]]+level:[[:space:]]*/ {
+			sub(/^[[:space:]]+level:[[:space:]]*/, "", $0);
+			print $0;
+			exit;
+		}
+	' "$CONFIG_PATH" | yaml_scalar_clean
+}
+
+basic_api_listen() {
+	awk '
+		/^[^[:space:]#][^:]*:/ {
+			top = $0;
+			sub(/:.*/, "", top);
+			second = "";
+		}
+		top == "api" && /^[[:space:]]+http:[[:space:]]*[^[:space:]#]/ {
+			sub(/^[[:space:]]+http:[[:space:]]*/, "", $0);
+			print $0;
+			exit;
+		}
+		top == "api" && /^[[:space:]]+http:[[:space:]]*$/ {
+			second = "http";
+			next;
+		}
+		top == "api" && second == "http" && /^[[:space:]]+listen:[[:space:]]*/ {
+			sub(/^[[:space:]]+listen:[[:space:]]*/, "", $0);
+			print $0;
+			exit;
+		}
+	' "$CONFIG_PATH" | yaml_scalar_clean
+}
+
+emit_config_basic_read() {
+	load_settings
+	if [ ! -r "$CONFIG_PATH" ]; then
+		json_error "config_not_found" "configuration file not found"
+		return 1
+	fi
+	printf '{'
+	printf '"ok":true,'
+	printf '"path":'
+	json_string "$CONFIG_PATH"
+	printf ',"mtime":'
+	json_string "$(stat_mtime "$CONFIG_PATH")"
+	printf ',"log_level":'
+	json_string "$(basic_log_level)"
+	printf ',"api_http_listen":'
+	json_string "$(basic_api_listen)"
+	printf '}\n'
+}
+
+safe_single_line_value() {
+	printf '%s' "$1" | grep -q '[\r\n]' && return 1
+	return 0
+}
+
+write_basic_config_temp() {
+	SOURCE_FILE="$1"
+	OUT_FILE="$2"
+	LOG_LEVEL="$3"
+	API_LISTEN="$4"
+	awk -v log_level="$LOG_LEVEL" -v api_listen="$API_LISTEN" '
+		BEGIN {
+			log_done = 0;
+			api_done = 0;
+			top = "";
+			second = "";
+		}
+		/^[^[:space:]#][^:]*:/ {
+			top = $0;
+			sub(/:.*/, "", top);
+			second = "";
+		}
+		top == "log" && /^[[:space:]]+level:[[:space:]]*/ {
+			print "  level: " log_level;
+			log_done = 1;
+			next;
+		}
+		top == "api" && /^[[:space:]]+http:[[:space:]]*[^[:space:]#]/ {
+			print "  http:";
+			print "    listen: \"" api_listen "\"";
+			api_done = 1;
+			second = "http";
+			next;
+		}
+		top == "api" && /^[[:space:]]+http:[[:space:]]*$/ {
+			second = "http";
+			print;
+			next;
+		}
+		top == "api" && second == "http" && /^[[:space:]]+listen:[[:space:]]*/ {
+			print "    listen: \"" api_listen "\"";
+			api_done = 1;
+			next;
+		}
+		{ print }
+		END {
+			if (!log_done || !api_done)
+				exit 42;
+		}
+	' "$SOURCE_FILE" > "$OUT_FILE"
+}
+
 input_value() {
 	KEY="$1"
 	INPUT="$2"
@@ -395,6 +508,68 @@ emit_config_save() {
 		mkdir -p "$WORKING_DIR/config-backups"
 		cp "$CONFIG_PATH" "$WORKING_DIR/config-backups/config.yaml.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
 	fi
+	mv "$TMP_FILE" "$CONFIG_PATH"
+
+	RELOAD_STATUS="not_requested"
+	if [ "$RELOAD" = "true" ] || [ "$RELOAD" = "1" ]; then
+		if api_post_empty reload >/dev/null 2>&1; then
+			RELOAD_STATUS="requested"
+		else
+			RELOAD_STATUS="failed"
+		fi
+	fi
+
+	printf '{"ok":true,"path":'
+	json_string "$CONFIG_PATH"
+	printf ',"mtime":'
+	json_string "$(stat_mtime "$CONFIG_PATH")"
+	printf ',"reload":'
+	json_string "$RELOAD_STATUS"
+	printf '}\n'
+}
+
+emit_config_basic_save() {
+	load_settings
+	INPUT="$(cat)"
+	LOG_LEVEL="$(input_value log_level "$INPUT")"
+	API_LISTEN="$(input_value api_http_listen "$INPUT")"
+	BASE_MTIME="$(input_value base_mtime "$INPUT")"
+	RELOAD="$(input_value reload "$INPUT")"
+
+	case "$LOG_LEVEL" in
+		off|trace|debug|info|warn|error) ;;
+		*)
+			json_error "invalid_log_level" "log_level must be one of off, trace, debug, info, warn, error"
+			return 1
+			;;
+	esac
+	if [ -z "$API_LISTEN" ] || ! safe_single_line_value "$API_LISTEN"; then
+		json_error "invalid_api_listen" "api_http_listen must be a single-line value"
+		return 1
+	fi
+	if [ ! -r "$CONFIG_PATH" ]; then
+		json_error "config_not_found" "configuration file not found"
+		return 1
+	fi
+	if [ -n "$BASE_MTIME" ] && [ "$BASE_MTIME" != "$(stat_mtime "$CONFIG_PATH")" ]; then
+		json_error "config_conflict" "configuration file changed since it was loaded"
+		return 1
+	fi
+
+	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-basic.XXXXXX")"
+	if ! write_basic_config_temp "$CONFIG_PATH" "$TMP_FILE" "$LOG_LEVEL" "$API_LISTEN"; then
+		rm -f "$TMP_FILE"
+		json_error "unsupported_basic_config" "top-level log.level and api.http.listen must already exist to use basic save"
+		return 1
+	fi
+	if ! OUTPUT="$(validate_config_file "$TMP_FILE")"; then
+		rm -f "$TMP_FILE"
+		json_error "config_invalid" "$OUTPUT"
+		return 1
+	fi
+
+	mkdir -p "$WORKING_DIR/config-backups"
+	cp "$CONFIG_PATH" "$WORKING_DIR/config-backups/config.yaml.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
 	mv "$TMP_FILE" "$CONFIG_PATH"
 
 	RELOAD_STATUS="not_requested"
@@ -716,6 +891,8 @@ case "${1:-}" in
 		printf '"config_read":{},'
 		printf '"config_validate":{"content":"string"},'
 		printf '"config_save":{"content":"string","base_mtime":"string","reload":"boolean"},'
+		printf '"config_basic_read":{},'
+		printf '"config_basic_save":{"log_level":"string","api_http_listen":"string","base_mtime":"string","reload":"boolean"},'
 		printf '"logs_recent":{"limit":"number"}'
 		printf '}\n'
 		;;
@@ -762,6 +939,12 @@ case "${1:-}" in
 				;;
 			config_save)
 				emit_config_save
+				;;
+			config_basic_read)
+				emit_config_basic_read
+				;;
+			config_basic_save)
+				emit_config_basic_save
 				;;
 			logs_recent)
 				emit_logs_recent
