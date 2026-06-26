@@ -2,165 +2,103 @@
 
 Language: [中文](./README.md) | English
 
-LuCI management application for OxiDNS on OpenWrt.
+`luci-app-oxidns` is the LuCI management app for OxiDNS on OpenWrt. After installation, LuCI adds `Services -> OxiDNS` pages for managing installation, service state, configuration, and logs.
 
-This project provides the OpenWrt-native control plane for OxiDNS:
+This LuCI app does not embed the OxiDNS runtime binary. The actual runtime is the OpenWrt package named `oxidns`, published by `svenshi/oxidns-openwrt-packages`. LuCI reads its manifest and selects the package that matches the current device architecture.
 
-- package-managed OxiDNS installation and upgrades;
-- procd service management;
-- YAML configuration viewing, validation, and saving;
-- runtime log viewing;
-- top-level basic configuration controls.
+## What To Install
 
-The LuCI app does not embed the OxiDNS binary. The OxiDNS runtime is expected to be installed through the OpenWrt package manager as the `oxidns` package.
+- `luci-app-oxidns`: the LuCI management pages.
+- `luci-i18n-oxidns-zh-cn`: optional Simplified Chinese translation package.
+- `oxidns`: the actual OxiDNS runtime package, installed or upgraded from the LuCI `Package` page.
 
-## Runtime Model
+## Install The LuCI App
 
-`luci-app-oxidns` is intentionally separate from the OxiDNS core package:
-
-- `svenshi/oxidns` publishes the core source release and generic artifacts.
-- `svenshi/oxidns-openwrt-packages` builds OpenWrt `oxidns` packages and the package manifest consumed by this LuCI app.
-- `svenshi/luci-app-oxidns` publishes the LuCI management package.
-
-The default runtime installation is the `oxidns` full bundle from the OpenWrt package feed. Bare binary management is only an advanced fallback and is not the default LuCI path.
-
-## Features
-
-- Overview page with package, binary, service, API, config, and log status.
-- Service actions: start, stop, restart, enable, and disable.
-- Core package actions: check update, install, upgrade, and remove through `opkg` or `apk`.
-- Configuration editor with read, validate, save, backup, reload, upload, download, and default-template actions.
-- Basic configuration form for safe top-level fields only.
-- Runtime log viewer with refresh, pause/resume, filtering, search, copy, and clear-front-end-display actions.
-- LuCI settings for manifest/feed URLs, proxy URL, API endpoint, config path, work directory, and optional GitHub token.
-
-## Install
-
-Install the LuCI package from a release artifact:
+Download the LuCI release artifact and install it on OpenWrt:
 
 ```sh
-opkg install luci-app-oxidns_0.1.0-r1_all.ipk
-opkg install luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk
+opkg install ./luci-app-oxidns_0.1.0-r1_all.ipk
+opkg install ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk
 ```
 
-or on OpenWrt systems using `apk`:
+On OpenWrt systems using `apk`:
 
 ```sh
-apk add --allow-untrusted luci-app-oxidns_0.1.0-r1_all.apk
-apk add --allow-untrusted luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
+apk add --allow-untrusted ./luci-app-oxidns_0.1.0-r1_all.apk
+apk add --allow-untrusted ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
 ```
 
-Restart `rpcd` after installation if the OxiDNS menu is not visible:
+If the menu does not appear after installation, restart `rpcd`:
 
 ```sh
 /etc/init.d/rpcd restart
 ```
 
-Then open LuCI and go to `Services -> OxiDNS`.
+Then open LuCI: `Services -> OxiDNS`.
 
-The Simplified Chinese UI is provided by the optional `luci-i18n-oxidns-zh-cn` package. The OpenWrt SDK builds this package from `po/zh_Hans/oxidns.po`; the local release script also emits matching `ipk` and `apk` artifacts.
+## Install Or Upgrade OxiDNS Core
 
-## Package Feed
+The LuCI `Package` page reads available OxiDNS runtime packages from a manifest. After the package repository is public and GitHub Pages is enabled, the default manifest URL is:
 
-The OxiDNS core should be installed from the self-maintained OpenWrt package feed. Replace the URL below with the feed published by `svenshi/oxidns-openwrt-packages`.
-
-For `opkg`:
-
-```sh
-echo 'src/gz oxidns https://example.com/oxidns/openwrt/packages' >> /etc/opkg/customfeeds.conf
-opkg update
-opkg install oxidns
+```text
+https://svenshi.github.io/oxidns-openwrt-packages/manifest.json
 ```
 
-For `apk`:
+If GitHub Pages is temporarily unavailable, you can use a manifest from a specific GitHub Release, for example:
 
-```sh
-echo 'https://example.com/oxidns/openwrt/packages' >> /etc/apk/repositories
-apk update
-apk add oxidns
+```text
+https://github.com/svenshi/oxidns-openwrt-packages/releases/download/v1.4.0/manifest.json
 ```
 
-The LuCI core package page can also install or upgrade `oxidns` when the package manifest URL is configured in `Services -> OxiDNS -> Settings`.
+Steps:
 
-## Upgrade And Remove
+1. Open `Services -> OxiDNS -> Settings` and confirm that `Manifest URL` is reachable.
+2. Open `Services -> OxiDNS -> Package` and click `Check for updates`.
+3. Click `Install` or `Upgrade` based on the result.
 
-Upgrade the LuCI package by installing a newer `luci-app-oxidns` artifact or by upgrading it from the configured package feed.
+LuCI installs the package through the system package manager, `opkg` or `apk`, and verifies the SHA256 value from the manifest.
 
-Upgrade the OxiDNS core from LuCI or with the system package manager:
+The current OxiDNS OpenWrt runtime releases are mainly `ipk` packages. Systems using `apk` need matching `apk` runtime packages before installation can work from this page.
 
-```sh
-opkg update
-opkg upgrade oxidns
-```
+## Main Pages
 
-or:
+- `Overview`: package, service, API, config path, and log status.
+- `Package`: check, install, upgrade, or remove the `oxidns` runtime package.
+- `Service`: start, stop, restart, enable, or disable the service.
+- `Config`: view, save, validate, back up, upload, or download the config file.
+- `Basic Config`: edit safe top-level configuration fields.
+- `Logs`: view runtime logs with refresh, pause, filter, and search controls.
+- `Settings`: configure manifest URL, proxy, API endpoint, config path, and working directory.
 
-```sh
-apk update
-apk upgrade oxidns
-```
-
-Removing `oxidns` should preserve `/etc/oxidns/config.yaml` and `/var/lib/oxidns` by default. The LuCI package can remain installed and will show the core as not installed.
-
-## Build
-
-Build from an OpenWrt buildroot or SDK with the LuCI feed available:
-
-```sh
-make package/luci-app-oxidns/compile V=s
-```
-
-When developing as an external package, place or symlink this repository under the OpenWrt package tree and ensure `$(TOPDIR)/feeds/luci/luci.mk` exists.
-
-Local package artifacts can be produced without an SDK for CI smoke testing:
-
-```sh
-scripts/build-luci-package.sh 0.1.0 dist
-```
-
-Run the local validation suite:
-
-```sh
-scripts/check.sh
-scripts/integration-check.sh
-scripts/release-check.sh 0.1.0 dist
-```
-
-## Default Runtime Paths
+## Default Paths
 
 - Binary: `/usr/bin/oxidns`
 - Config: `/etc/oxidns/config.yaml`
 - Working directory: `/var/lib/oxidns`
 - Init script: `/etc/init.d/oxidns`
+- API endpoint: `http://127.0.0.1:9199/api`
 
-## Release Flow
+## Upgrade And Remove
 
-The recommended release flow keeps OpenWrt package artifacts out of the OxiDNS core release:
+To upgrade the LuCI app, download and install the newer `luci-app-oxidns` package.
 
-1. Tag `svenshi/oxidns` with the core version.
-2. Trigger `svenshi/oxidns-openwrt-packages` through `repository_dispatch` or `workflow_dispatch`.
-3. Build package-managed OxiDNS full-bundle `ipk` and `apk` artifacts in the OpenWrt package repository.
-4. Publish `manifest.json`, `latest.json`, and `sha256sums.txt` from the package repository or feed.
-5. Tag `svenshi/luci-app-oxidns` to publish the LuCI package.
-6. Update the package feed and verify install, service start, config save, and log viewing on target OpenWrt images.
+To upgrade the OxiDNS runtime, use the LuCI `Package` page. You can also download the matching `oxidns` package manually and install it with `opkg install`.
 
-The release workflow in this repository runs static checks, integration checks, builds `ipk` and `apk` LuCI artifacts, builds the Simplified Chinese `luci-i18n-oxidns-zh-cn` artifacts, and publishes them to the GitHub release.
+To remove the OxiDNS runtime from the command line:
 
-## OpenWrt Core Package Matrix
+```sh
+opkg remove oxidns
+```
 
-The OpenWrt core package matrix targets:
+Removing the runtime package should preserve `/etc/oxidns/config.yaml` and `/var/lib/oxidns` by default, so reinstalling or upgrading later can reuse existing state.
 
-- `x86_64-unknown-linux-musl`
-- `aarch64-unknown-linux-musl`
-- `i686-unknown-linux-musl`
-- `arm-unknown-linux-musleabihf` (32-bit ARM hard-float)
-- `armv7-unknown-linux-musleabihf` (ARMv7 hard-float, supported by future releases)
+## Private Repositories And Downloads
 
-`arm-unknown-linux-musleabihf` and `armv7-unknown-linux-musleabihf` are distinct release targets and must not be treated as interchangeable. Package selection is based on the OpenWrt package manager, package architecture, and the manifest generated by `oxidns-openwrt-packages`.
+The router must be able to reach the manifest and package files directly. While the package repository is private, GitHub Pages may be unavailable and release files may not be directly downloadable by the router. After public release, use the GitHub Pages manifest URL when possible.
 
 ## Known Limitations
 
-- The basic configuration form only edits top-level safe fields. It does not edit `plugins` entries or plugin arguments.
-- OxiDNS API log reading is preferred, but the log page falls back to `logread` when the API is unavailable.
-- Local CI package checks do not replace final verification on real OpenWrt `opkg` and `apk` targets.
-- Bare binary mode is an advanced fallback and is not the default install, upgrade, or remove path.
+- The `Package` page depends on `openwrt_arch` in the manifest matching the architecture reported by the device package manager.
+- Current OxiDNS OpenWrt runtime packages are mainly `ipk`; matching `apk` runtime packages are still pending.
+- `Basic Config` only edits safe top-level fields and does not edit complex plugin configuration.
+- The log page prefers the OxiDNS API and falls back to OpenWrt `logread` when the API is unavailable.
