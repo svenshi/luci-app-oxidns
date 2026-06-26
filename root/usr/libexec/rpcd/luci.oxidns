@@ -150,6 +150,10 @@ package_version() {
 	esac
 }
 
+package_version_key() {
+	printf '%s' "$1" | sed 's/^v//; s/-r[0-9][0-9]*$//'
+}
+
 service_enabled() {
 	INIT="$(init_script)"
 	[ -x "$INIT" ] && "$INIT" enabled >/dev/null 2>&1
@@ -876,7 +880,7 @@ emit_package_check_update() {
 	rm -f "$TMP_FILE"
 	CURRENT="$(package_version "$(detect_package_manager)" || true)"
 	UPDATE=0
-	if [ -n "$SELECT_VERSION" ] && [ "$SELECT_VERSION" != "$CURRENT" ]; then UPDATE=1; fi
+	if [ -n "$SELECT_VERSION" ] && [ "$(package_version_key "$SELECT_VERSION")" != "$(package_version_key "$CURRENT")" ]; then UPDATE=1; fi
 	printf '{"ok":true,"current_version":'
 	json_string "$CURRENT"
 	printf ',"latest_version":'
