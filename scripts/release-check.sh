@@ -15,8 +15,31 @@ need_cmd() {
 	}
 }
 
+ar_has_member() {
+	ar t "$1" | awk -v member="$2" '
+		{
+			sub(/\/$/, "");
+			if ($0 == member)
+				found = 1;
+		}
+		END { exit found ? 0 : 1 }
+	'
+}
+
+tar_has_member() {
+	tar -tzf "$1" | awk -v member="$2" '
+		{
+			path = $0;
+			sub(/^\.\//, "", path);
+			if (path == member)
+				found = 1;
+		}
+		END { exit found ? 0 : 1 }
+	'
+}
+
 need_cmd ar
-need_cmd grep
+need_cmd awk
 need_cmd sha256sum
 need_cmd tar
 
@@ -24,12 +47,12 @@ scripts/check.sh
 scripts/integration-check.sh
 scripts/build-luci-package.sh "$VERSION" "$OUT_DIR"
 
-ar t "$OUT_DIR/${PKG_BASE}.ipk" | grep -q '^debian-binary/$'
-ar t "$OUT_DIR/${PKG_BASE}.ipk" | grep -q '^control.tar.gz/$'
-ar t "$OUT_DIR/${PKG_BASE}.ipk" | grep -q '^data.tar.gz/$'
-ar t "$OUT_DIR/${I18N_BASE}.ipk" | grep -q '^data.tar.gz/$'
-tar -tzf "$OUT_DIR/${PKG_BASE}.apk" | grep -q './usr/libexec/rpcd/luci.oxidns'
-tar -tzf "$OUT_DIR/${I18N_BASE}.apk" | grep -q './usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo'
+ar_has_member "$OUT_DIR/${PKG_BASE}.ipk" debian-binary
+ar_has_member "$OUT_DIR/${PKG_BASE}.ipk" control.tar.gz
+ar_has_member "$OUT_DIR/${PKG_BASE}.ipk" data.tar.gz
+ar_has_member "$OUT_DIR/${I18N_BASE}.ipk" data.tar.gz
+tar_has_member "$OUT_DIR/${PKG_BASE}.apk" usr/libexec/rpcd/luci.oxidns
+tar_has_member "$OUT_DIR/${I18N_BASE}.apk" usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo
 sha256sum -c "$OUT_DIR/sha256sums.txt"
 
 printf 'Release check passed for %s in %s\n' "$VERSION" "$OUT_DIR"
