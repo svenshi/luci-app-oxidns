@@ -56,9 +56,7 @@ https://github.com/svenshi/oxidns-openwrt-packages/releases/download/v1.4.0/mani
 2. 打开 `Services -> OxiDNS -> Package`，点击 `Check for updates`。
 3. 根据页面结果点击 `Install` 或 `Upgrade`。
 
-LuCI 会使用系统里的 `opkg` 或 `apk` 安装包，并校验 manifest 中的 SHA256。
-
-当前 OxiDNS OpenWrt 内核包主要发布 `ipk`。如果你的系统使用 `apk`，需要等待对应的 `apk` 内核包发布后才能通过这里安装。
+LuCI 会使用系统里的 `opkg` 或 `apk` 安装包，并校验 manifest 中的 SHA256。manifest 会同时列出可用的 `ipk` 和 `apk` 包，LuCI 会按当前系统的包管理器和架构选择匹配项。
 
 ## 常用页面
 
@@ -99,6 +97,6 @@ opkg remove oxidns
 ## 已知限制
 
 - Package 页面依赖 manifest 中的 `openwrt_arch` 与设备包管理器报告的架构匹配。
-- 当前 OxiDNS OpenWrt 内核包以 `ipk` 为主，`apk` 内核包仍待发布。
+- OxiDNS OpenWrt 内核包同时发布 `ipk` 和 `apk`，但仍需要对应架构出现在 manifest 中。
 - `Basic Config` 只编辑安全的顶层字段，不编辑复杂插件配置。
 - 日志页优先读取 OxiDNS API；API 不可用时回退到 OpenWrt `logread`。

@@ -11,6 +11,7 @@ rm -f "${TMPDIR:-/tmp}/oxidns.zh-cn.lmo"
 if command -v msgfmt >/dev/null 2>&1; then
 	msgfmt --check po/zh_Hans/oxidns.po -o /dev/null
 fi
-node --check scripts/write-ar.mjs
 sh -n root/usr/libexec/rpcd/luci.oxidns
+sh -n scripts/build-luci-package.sh
+sh -n scripts/integration-check.sh
 sh -n scripts/release-check.sh

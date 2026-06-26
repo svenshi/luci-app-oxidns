@@ -27,6 +27,20 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+create_ipk() {
+	out="$1"
+	control_tar="$2"
+	data_tar="$3"
+	ipk_dir="$TMP_DIR/ipk-$(basename "$out" .ipk)"
+
+	rm -rf "$ipk_dir"
+	mkdir -p "$ipk_dir"
+	cp "$TMP_DIR/debian-binary" "$ipk_dir/debian-binary"
+	cp "$control_tar" "$ipk_dir/control.tar.gz"
+	cp "$data_tar" "$ipk_dir/data.tar.gz"
+	tar -czf "$out" -C "$ipk_dir" .
+}
+
 CONTROL_DIR="$TMP_DIR/control"
 DATA_DIR="$TMP_DIR/data"
 I18N_CONTROL_DIR="$TMP_DIR/i18n-control"
@@ -59,10 +73,7 @@ chmod 755 "$DATA_DIR/usr/libexec/rpcd/luci.oxidns"
 printf '2.0\n' > "$TMP_DIR/debian-binary"
 tar -czf "$TMP_DIR/control.tar.gz" -C "$CONTROL_DIR" .
 tar -czf "$TMP_DIR/data.tar.gz" -C "$DATA_DIR" .
-node scripts/write-ar.mjs "$OUT_DIR/${PKG_FILE_BASE}.ipk" \
-	"$TMP_DIR/debian-binary" \
-	"$TMP_DIR/control.tar.gz" \
-	"$TMP_DIR/data.tar.gz"
+create_ipk "$OUT_DIR/${PKG_FILE_BASE}.ipk" "$TMP_DIR/control.tar.gz" "$TMP_DIR/data.tar.gz"
 
 cat > "$DATA_DIR/.PKGINFO" <<EOF
 pkgname = $PKG_NAME
@@ -106,10 +117,7 @@ EOF
 
 	tar -czf "$TMP_DIR/control.tar.gz" -C "$I18N_CONTROL_DIR" .
 	tar -czf "$TMP_DIR/data.tar.gz" -C "$I18N_DATA_DIR" .
-	node scripts/write-ar.mjs "$OUT_DIR/${I18N_FILE_BASE}.ipk" \
-		"$TMP_DIR/debian-binary" \
-		"$TMP_DIR/control.tar.gz" \
-		"$TMP_DIR/data.tar.gz"
+	create_ipk "$OUT_DIR/${I18N_FILE_BASE}.ipk" "$TMP_DIR/control.tar.gz" "$TMP_DIR/data.tar.gz"
 
 	cat > "$I18N_DATA_DIR/.PKGINFO" <<EOF
 pkgname = $I18N_PKG_NAME
