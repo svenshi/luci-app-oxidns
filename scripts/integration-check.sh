@@ -17,6 +17,18 @@ ar_has_member() {
 	'
 }
 
+tar_has_member() {
+	tar -tzf "$1" | awk -v member="$2" '
+		{
+			path = $0;
+			sub(/^\.\//, "", path);
+			if (path == member)
+				found = 1;
+		}
+		END { exit found ? 0 : 1 }
+	'
+}
+
 scripts/check.sh
 
 root/usr/libexec/rpcd/luci.oxidns list | json_ok "'status' in v && 'logs_recent' in v && 'settings_read' in v"
@@ -34,8 +46,8 @@ ar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" debian-binary
 ar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz
 ar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz
 ar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" data.tar.gz
-tar -tzf "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" | grep -q './usr/libexec/rpcd/luci.oxidns'
-tar -tzf "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" | grep -q './usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo'
+tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" usr/libexec/rpcd/luci.oxidns
+tar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo
 
 node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('root/usr/share/oxidns/openwrt-manifest.example.json','utf8')); const formats=new Set(m.oxidns.packages.map(p=>p.format)); if (m.schema_version !== 1 || !formats.has('ipk') || !formats.has('apk')) process.exit(1);"
 
