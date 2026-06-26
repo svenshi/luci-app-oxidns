@@ -2,158 +2,103 @@
 
 语言：中文 | [English](./README.en.md)
 
-`luci-app-oxidns` 是 OxiDNS 在 OpenWrt / LuCI 上的管理插件。它提供 OpenWrt 原生的 Web 管理入口，用于管理通过系统包管理器安装的 `oxidns` 运行时。
+`luci-app-oxidns` 是 OxiDNS 的 OpenWrt / LuCI 管理插件。安装后，LuCI 会出现 `Services -> OxiDNS` 页面，用来管理 OxiDNS 的安装、服务、配置和日志。
 
-本插件不内置 OxiDNS 二进制。OxiDNS 内核应通过 OpenWrt 包管理器以 `oxidns` 包的形式安装，默认使用 full 版本。
+这个插件不内置 OxiDNS 内核二进制。真正运行的是 OpenWrt 包 `oxidns`，由 `svenshi/oxidns-openwrt-packages` 发布，LuCI 会通过 manifest 自动选择适合当前设备架构的包。
 
-## 仓库职责
+## 你需要安装什么
 
-`luci-app-oxidns` 与 OxiDNS 核心和 OpenWrt 内核包仓库保持分离：
+- `luci-app-oxidns`：LuCI 管理页面。
+- `luci-i18n-oxidns-zh-cn`：可选简体中文语言包。
+- `oxidns`：真正运行的 OxiDNS 内核包，可在 LuCI 的 `Package` 页面安装或升级。
 
-- `svenshi/oxidns`：OxiDNS Rust 核心源码、通用 release、通用二进制、Docker 等。
-- `svenshi/oxidns-openwrt-packages`：OpenWrt `oxidns` 内核包、package feed、manifest、checksums。
-- `svenshi/luci-app-oxidns`：LuCI 管理插件、rpcd 后端、LuCI 包。
+## 安装 LuCI 插件
 
-默认运行方式是通过 OpenWrt package feed 安装 package-managed 的 OxiDNS full bundle。裸二进制模式只作为高级回退，不是默认路径。
-
-## 主要功能
-
-- 总览页：展示包状态、二进制状态、服务状态、API 状态、配置路径和日志状态。
-- 服务管理：启动、停止、重启、启用自启、禁用自启。
-- 内核包管理：通过 `opkg` 或 `apk` 检查更新、安装、升级和删除 `oxidns`。
-- 配置管理：查看、校验、保存、备份、重载、上传、下载和恢复默认配置。
-- 基础配置：只编辑安全的顶层基础字段。
-- 日志查看：刷新、暂停、继续、过滤、搜索、复制和清空前端显示。
-- 插件设置：manifest/feed URL、代理、API 地址、配置路径、工作目录和可选 GitHub Token。
-- 国际化：提供简体中文语言包 `luci-i18n-oxidns-zh-cn`。
-
-## 安装
-
-从 release artifact 安装 LuCI 插件：
+从本仓库 Release 下载对应的 LuCI 包，然后安装：
 
 ```sh
-opkg install luci-app-oxidns_0.1.0-r1_all.ipk
-opkg install luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk
+opkg install ./luci-app-oxidns_0.1.0-r1_all.ipk
+opkg install ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk
 ```
 
 在使用 `apk` 的 OpenWrt 系统上：
 
 ```sh
-apk add --allow-untrusted luci-app-oxidns_0.1.0-r1_all.apk
-apk add --allow-untrusted luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
+apk add --allow-untrusted ./luci-app-oxidns_0.1.0-r1_all.apk
+apk add --allow-untrusted ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
 ```
 
-如果安装后 LuCI 菜单未出现，重启 `rpcd`：
+如果安装后菜单没有出现，重启 `rpcd`：
 
 ```sh
 /etc/init.d/rpcd restart
 ```
 
-然后在 LuCI 中打开 `Services -> OxiDNS`。
+然后打开 LuCI：`Services -> OxiDNS`。
 
-简体中文界面由可选语言包 `luci-i18n-oxidns-zh-cn` 提供。OpenWrt SDK 会从 `po/zh_Hans/oxidns.po` 构建该语言包；本仓库本地 release 脚本也会生成对应的 `ipk` 和 `apk`。
+## 安装或升级 OxiDNS 内核
 
-## Package Feed
+LuCI 的 `Package` 页面会从 manifest 读取可用的 OxiDNS 内核包。仓库公开并启用 GitHub Pages 后，默认 manifest 地址是：
 
-OxiDNS 内核应从自维护 OpenWrt package feed 安装。将下面的 URL 替换为 `svenshi/oxidns-openwrt-packages` 发布的真实 feed。
-
-`opkg`：
-
-```sh
-echo 'src/gz oxidns https://example.com/oxidns/openwrt/packages' >> /etc/opkg/customfeeds.conf
-opkg update
-opkg install oxidns
+```text
+https://svenshi.github.io/oxidns-openwrt-packages/manifest.json
 ```
 
-`apk`：
+如果 GitHub Pages 暂时不可用，也可以临时使用某个 Release 中的 manifest，例如：
 
-```sh
-echo 'https://example.com/oxidns/openwrt/packages' >> /etc/apk/repositories
-apk update
-apk add oxidns
+```text
+https://github.com/svenshi/oxidns-openwrt-packages/releases/download/v1.4.0/manifest.json
 ```
 
-配置 manifest URL 后，LuCI 的内核包管理页面也可以安装或升级 `oxidns`。
+使用步骤：
 
-## 升级与删除
+1. 打开 `Services -> OxiDNS -> Settings`，确认 `Manifest URL` 可访问。
+2. 打开 `Services -> OxiDNS -> Package`，点击 `Check for updates`。
+3. 根据页面结果点击 `Install` 或 `Upgrade`。
 
-升级 LuCI 插件时，安装新的 `luci-app-oxidns` artifact，或从已配置的 package feed 升级。
+LuCI 会使用系统里的 `opkg` 或 `apk` 安装包，并校验 manifest 中的 SHA256。
 
-升级 OxiDNS 内核：
+当前 OxiDNS OpenWrt 内核包主要发布 `ipk`。如果你的系统使用 `apk`，需要等待对应的 `apk` 内核包发布后才能通过这里安装。
 
-```sh
-opkg update
-opkg upgrade oxidns
-```
+## 常用页面
 
-或：
+- `Overview`：查看包状态、服务状态、API 状态、配置路径和日志状态。
+- `Package`：检查、安装、升级或删除 `oxidns` 内核包。
+- `Service`：启动、停止、重启服务，或启用/禁用开机自启。
+- `Config`：查看、保存、校验、备份、上传或下载配置文件。
+- `Basic Config`：编辑安全的顶层基础配置项。
+- `Logs`：查看运行日志，支持刷新、暂停、过滤和搜索。
+- `Settings`：设置 manifest URL、代理、API 地址、配置路径和工作目录。
 
-```sh
-apk update
-apk upgrade oxidns
-```
-
-删除 `oxidns` 默认应保留 `/etc/oxidns/config.yaml` 和 `/var/lib/oxidns`。LuCI 插件可以继续保留安装状态，并显示内核未安装。
-
-## 构建
-
-在已启用 LuCI feed 的 OpenWrt buildroot 或 SDK 中构建：
-
-```sh
-make package/luci-app-oxidns/compile V=s
-```
-
-作为外部包开发时，将本仓库放置或软链接到 OpenWrt package tree，并确保 `$(TOPDIR)/feeds/luci/luci.mk` 存在。
-
-不依赖 SDK 的本地 smoke build：
-
-```sh
-scripts/build-luci-package.sh 0.1.0 dist
-```
-
-本地验证：
-
-```sh
-scripts/check.sh
-scripts/integration-check.sh
-scripts/release-check.sh 0.1.0 dist
-```
-
-## 默认运行路径
+## 默认路径
 
 - 二进制：`/usr/bin/oxidns`
 - 配置：`/etc/oxidns/config.yaml`
 - 工作目录：`/var/lib/oxidns`
-- Init 脚本：`/etc/init.d/oxidns`
+- 服务脚本：`/etc/init.d/oxidns`
+- API 地址：`http://127.0.0.1:9199/api`
 
-## 发布流程
+## 升级与删除
 
-推荐发布流程会把 OpenWrt 内核包从 OxiDNS 主仓库 release 中拆出来，避免主仓库 release asset 膨胀：
+升级 LuCI 插件时，下载新版本 `luci-app-oxidns` 包并重新安装即可。
 
-1. 在 `svenshi/oxidns` 发布核心版本 tag。
-2. 通过 `repository_dispatch` 或 `workflow_dispatch` 触发 `svenshi/oxidns-openwrt-packages`。
-3. 在 OpenWrt package 仓库中构建 OxiDNS full bundle 的 `ipk` 和 `apk`。
-4. 从 package 仓库或 feed 发布 `manifest.json`、`latest.json` 和 `sha256sums.txt`。
-5. 在 `svenshi/luci-app-oxidns` 发布 LuCI 插件 tag。
-6. 更新 package feed，并在目标 OpenWrt 镜像上验证安装、服务启动、配置保存和日志查看。
+升级 OxiDNS 内核时，推荐使用 LuCI 的 `Package` 页面；也可以手动下载匹配架构的 `oxidns` 包后用 `opkg install` 安装。
 
-本仓库的 release workflow 会运行静态检查、集成检查，构建 LuCI `ipk` / `apk`，构建简体中文 `luci-i18n-oxidns-zh-cn` artifact，并发布到 GitHub Release。
+删除 OxiDNS 内核包可以在 LuCI 的 `Package` 页面操作，也可以执行：
 
-## OpenWrt 内核包矩阵
+```sh
+opkg remove oxidns
+```
 
-OpenWrt 内核包矩阵目标：
+删除内核包默认应保留 `/etc/oxidns/config.yaml` 和 `/var/lib/oxidns`，方便以后重新安装或升级。
 
-- `x86_64-unknown-linux-musl`
-- `aarch64-unknown-linux-musl`
-- `i686-unknown-linux-musl`
-- `arm-unknown-linux-musleabihf`（32 位 ARM hard-float）
-- `armv7-unknown-linux-musleabihf`（ARMv7 hard-float，后续发行版本支持）
+## 私有仓库与下载
 
-`arm-unknown-linux-musleabihf` 与 `armv7-unknown-linux-musleabihf` 是两个不同发行目标，不能互相替代。包选择基于 OpenWrt 包管理器、包架构，以及 `oxidns-openwrt-packages` 生成的 manifest。
+路由器需要能直接访问 manifest 和包文件。仓库仍是私有状态时，GitHub Pages 可能不可用，Release 文件也可能无法被路由器直接下载。公开发布后，推荐使用 GitHub Pages 的 manifest 地址。
 
 ## 已知限制
 
-- 基础配置表单只编辑顶层安全字段，不编辑 `plugins` 条目或插件参数。
-- 日志页优先读取 OxiDNS API 日志；API 不可用时回退到 `logread`。
-- 本地 CI package 检查不能替代真实 OpenWrt `opkg` 和 `apk` 目标验证。
-- 裸二进制模式仅为高级回退，不是默认安装、升级或删除路径。
+- Package 页面依赖 manifest 中的 `openwrt_arch` 与设备包管理器报告的架构匹配。
+- 当前 OxiDNS OpenWrt 内核包以 `ipk` 为主，`apk` 内核包仍待发布。
+- `Basic Config` 只编辑安全的顶层字段，不编辑复杂插件配置。
+- 日志页优先读取 OxiDNS API；API 不可用时回退到 OpenWrt `logread`。
