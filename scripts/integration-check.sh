@@ -6,6 +6,17 @@ json_ok() {
 	node -e "const v=JSON.parse(require('fs').readFileSync(0,'utf8')); if (!($1)) process.exit(1);"
 }
 
+ar_has_member() {
+	ar t "$1" | awk -v member="$2" '
+		{
+			sub(/\/$/, "");
+			if ($0 == member)
+				found = 1;
+		}
+		END { exit found ? 0 : 1 }
+	'
+}
+
 scripts/check.sh
 
 root/usr/libexec/rpcd/luci.oxidns list | json_ok "'status' in v && 'logs_recent' in v && 'settings_read' in v"
@@ -19,10 +30,10 @@ printf '%s' '{"limit":"20"}' | root/usr/libexec/rpcd/luci.oxidns call logs_recen
 
 DIST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/luci-app-oxidns-dist.XXXXXX")"
 scripts/build-luci-package.sh 0.1.0 "$DIST_DIR" >/dev/null
-ar t "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" | grep -q '^debian-binary/$'
-ar t "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" | grep -q '^control.tar.gz/$'
-ar t "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" | grep -q '^data.tar.gz/$'
-ar t "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" | grep -q '^data.tar.gz/$'
+ar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" debian-binary
+ar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz
+ar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz
+ar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" data.tar.gz
 tar -tzf "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" | grep -q './usr/libexec/rpcd/luci.oxidns'
 tar -tzf "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" | grep -q './usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo'
 
