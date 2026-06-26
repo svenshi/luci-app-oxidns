@@ -56,9 +56,7 @@ Steps:
 2. Open `Services -> OxiDNS -> Package` and click `Check for updates`.
 3. Click `Install` or `Upgrade` based on the result.
 
-LuCI installs the package through the system package manager, `opkg` or `apk`, and verifies the SHA256 value from the manifest.
-
-The current OxiDNS OpenWrt runtime releases are mainly `ipk` packages. Systems using `apk` need matching `apk` runtime packages before installation can work from this page.
+LuCI installs the package through the system package manager, `opkg` or `apk`, and verifies the SHA256 value from the manifest. The manifest lists available `ipk` and `apk` packages, and LuCI selects the package matching the current package manager and architecture.
 
 ## Main Pages
 
@@ -99,6 +97,6 @@ The router must be able to reach the manifest and package files directly. While 
 ## Known Limitations
 
 - The `Package` page depends on `openwrt_arch` in the manifest matching the architecture reported by the device package manager.
-- Current OxiDNS OpenWrt runtime packages are mainly `ipk`; matching `apk` runtime packages are still pending.
+- OxiDNS OpenWrt runtime packages are published as both `ipk` and `apk`, but the matching architecture must still be present in the manifest.
 - `Basic Config` only edits safe top-level fields and does not edit complex plugin configuration.
 - The log page prefers the OxiDNS API and falls back to OpenWrt `logread` when the API is unavailable.
