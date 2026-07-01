@@ -22,7 +22,14 @@ tar_nested_has_member() {
 	outer="$1"
 	inner="$2"
 	member="$3"
-	tar -xOf "$outer" "$inner" 2>/dev/null | tar -tzf - | awk -v member="$member" '
+	nested="$(mktemp "${TMPDIR:-/tmp}/luci-app-oxidns-nested.XXXXXX")"
+	if ! tar -xOf "$outer" "$inner" > "$nested" 2>/dev/null &&
+		! tar -xOf "$outer" "./$inner" > "$nested" 2>/dev/null; then
+		rm -f "$nested"
+		return 1
+	fi
+
+	if tar -tzf "$nested" | awk -v member="$member" '
 		{
 			path = $0;
 			sub(/^\.\//, "", path);
@@ -30,7 +37,13 @@ tar_nested_has_member() {
 				found = 1;
 		}
 		END { exit found ? 0 : 1 }
-	'
+	'; then
+		rm -f "$nested"
+		return 0
+	fi
+
+	rm -f "$nested"
+	return 1
 }
 
 scripts/check.sh
