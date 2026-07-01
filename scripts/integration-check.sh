@@ -52,6 +52,13 @@ root/usr/libexec/rpcd/luci.oxidns list | json_ok "'status' in v && 'core_install
 root/usr/libexec/rpcd/luci.oxidns call status | json_ok "v.ok === true && v.core && v.core.installed === false && v.webui && v.webui.installed === false && typeof v.webui.url === 'string' && typeof v.webui.local_only === 'boolean' && typeof v.webui.wildcard === 'boolean' && !('api' in v) && !('api_base_url' in v) && !('package' in v) && !('package_manager' in v)"
 root/usr/libexec/rpcd/luci.oxidns call core_reinstall | json_ok "v.ok === false && v.code === 'core_not_installed'"
 printf '%s' '{"path":"/etc/passwd"}' | root/usr/libexec/rpcd/luci.oxidns call core_upload_install | json_ok "v.ok === false && v.code === 'invalid_upload_path'"
+UNSAFE_UPLOAD="$(mktemp "/tmp/oxidns-core-upload-unsafe.XXXXXX")"
+UNSAFE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-core-upload-unsafe-dir.XXXXXX")"
+rm -f "$UNSAFE_UPLOAD"
+ln -s /etc/passwd "$UNSAFE_DIR/oxidns"
+tar -czf "$UNSAFE_UPLOAD" -C "$UNSAFE_DIR" oxidns
+printf '{"path":"%s"}' "$UNSAFE_UPLOAD" | root/usr/libexec/rpcd/luci.oxidns call core_upload_install | json_ok "v.ok === false && v.code === 'uploaded_archive_unsafe'"
+rm -rf "$UNSAFE_DIR"
 root/usr/libexec/rpcd/luci.oxidns call config_read | json_ok "v.ok === false && v.code === 'config_not_found'"
 root/usr/libexec/rpcd/luci.oxidns call settings_read | json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.core_bundle === 'full' && v.github_token_set === false && !('api_base_url' in v)"
 printf '%s' '{"limit":"20"}' | root/usr/libexec/rpcd/luci.oxidns call logs_recent | json_ok "v.ok === true && v.source === 'logread' && Array.isArray(v.lines) && !('entries' in v)"

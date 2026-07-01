@@ -861,6 +861,42 @@ valid_sha256() {
 	printf '%s' "$1" | grep -Eq '^[0-9a-fA-F]{64}$'
 }
 
+validate_safe_archive() {
+	ARCHIVE="$1"
+	if ! tar -tzf "$ARCHIVE" | awk '
+		{
+			path = $0;
+			while (path ~ /^\.\//)
+				sub(/^\.\//, "", path);
+			while (path ~ /\/$/)
+				sub(/\/$/, "", path);
+			if (path == "" || path ~ /^\//)
+				bad = 1;
+			n = split(path, parts, "/");
+			for (i = 1; i <= n; i++) {
+				if (parts[i] == "" || parts[i] == "..")
+					bad = 1;
+			}
+		}
+		END { exit bad ? 1 : 0 }
+	'; then
+		return 1
+	fi
+
+	if ! tar -tvzf "$ARCHIVE" | awk '
+		{
+			type = substr($0, 1, 1);
+			if (type == "l" || type == "h")
+				bad = 1;
+		}
+		END { exit bad ? 1 : 0 }
+	'; then
+		return 1
+	fi
+
+	return 0
+}
+
 write_openwrt_default_config() {
 	SOURCE_FILE="$1"
 	OUT_FILE="$2"
@@ -965,6 +1001,10 @@ install_core_from_release() {
 		core_install_error "core_checksum_failed" "OxiDNS core archive SHA256 does not match the release digest"
 		return 1
 	fi
+	if ! validate_safe_archive "$ARCHIVE_FILE"; then
+		core_install_error "core_archive_unsafe" "OxiDNS core archive contains unsafe paths or links"
+		return 1
+	fi
 
 	mkdir -p "$UNPACK_DIR"
 	if ! tar -xzf "$ARCHIVE_FILE" -C "$UNPACK_DIR"; then
@@ -987,6 +1027,14 @@ install_core_from_release() {
 			core_install_error "default_config_unsupported" "release config.yaml cannot be adapted for OpenWrt defaults"
 			return 1
 		fi
+	fi
+
+	SERVICE_RESTART="not_requested"
+	SERVICE_WAS_RUNNING=0
+	if service_running; then SERVICE_WAS_RUNNING=1; fi
+	INIT="$(init_script)"
+	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
+		"$INIT" stop >/dev/null 2>&1 || true
 	fi
 
 	mkdir -p "$(dirname "$OXIDNS_BIN")" "$WORKING_DIR"
@@ -1016,6 +1064,13 @@ install_core_from_release() {
 	else
 		CONFIG_CHECK_OUTPUT="${CONFIG_CHECK_OUTPUT:-configuration check failed}"
 	fi
+	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
+		if "$INIT" start >/dev/null 2>&1; then
+			SERVICE_RESTART="requested"
+		else
+			SERVICE_RESTART="failed"
+		fi
+	fi
 
 	rm -rf "$CORE_TMP_DIR"
 	printf '{"ok":true,"action":'
@@ -1032,6 +1087,8 @@ install_core_from_release() {
 	json_string "$OXIDNS_BIN"
 	printf ',"webui_path":'
 	json_string "$WEBUI_DIR"
+	printf ',"service_restart":'
+	json_string "$SERVICE_RESTART"
 	printf ',"config_check":{"ok":'
 	json_bool "$CONFIG_CHECK_OK"
 	printf ',"message":'
@@ -1211,6 +1268,10 @@ emit_core_upload_install() {
 	mkdir -p "$UNPACK_DIR"
 
 	if tar -tzf "$UPLOAD_PATH" >/dev/null 2>&1; then
+		if ! validate_safe_archive "$UPLOAD_PATH"; then
+			upload_core_error "uploaded_archive_unsafe" "uploaded archive contains unsafe paths or links"
+			return 1
+		fi
 		if ! tar -xzf "$UPLOAD_PATH" -C "$UNPACK_DIR"; then
 			upload_core_error "uploaded_archive_unpack_failed" "failed to unpack uploaded OxiDNS archive"
 			return 1
