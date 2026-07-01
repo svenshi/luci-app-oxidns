@@ -72,11 +72,14 @@ create_ipk() {
 	ipk_out="$1"
 	ipk_control_tar="$2"
 	ipk_data_tar="$3"
+	ipk_dir="$TMP_DIR/ipk-$(basename "$ipk_out" .ipk)"
 
-	node scripts/write-ar.mjs "$ipk_out" \
-		"$TMP_DIR/debian-binary" \
-		"$ipk_control_tar" \
-		"$ipk_data_tar"
+	rm -rf "$ipk_dir"
+	mkdir -p "$ipk_dir"
+	cp "$TMP_DIR/debian-binary" "$ipk_dir/debian-binary"
+	cp "$ipk_data_tar" "$ipk_dir/data.tar.gz"
+	cp "$ipk_control_tar" "$ipk_dir/control.tar.gz"
+	tar_create_gz "$ipk_out" -C "$ipk_dir" ./debian-binary ./data.tar.gz ./control.tar.gz
 }
 
 create_apk() {

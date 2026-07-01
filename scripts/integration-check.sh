@@ -22,37 +22,6 @@ tar_member_contains() {
 	tar -xOzf "$1" "$2" 2>/dev/null | grep -q "$3"
 }
 
-ar_has_member() {
-	ar t "$1" | awk -v member="$2" '
-		{
-			path = $0;
-			sub(/\/$/, "", path);
-			if (path == member)
-				found = 1;
-		}
-		END { exit found ? 0 : 1 }
-	'
-}
-
-ar_nested_has_member() {
-	outer="$1"
-	inner="$2"
-	member="$3"
-	nested="$(mktemp "${TMPDIR:-/tmp}/luci-app-oxidns-nested.XXXXXX")"
-	if ! ar p "$outer" "$inner" > "$nested" 2>/dev/null; then
-		rm -f "$nested"
-		return 1
-	fi
-
-	if tar_has_member "$nested" "$member"; then
-		rm -f "$nested"
-		return 0
-	fi
-
-	rm -f "$nested"
-	return 1
-}
-
 tar_nested_has_member() {
 	outer="$1"
 	inner="$2"
@@ -113,14 +82,14 @@ printf '%s' '{"limit":"20"}' | root/usr/libexec/rpcd/luci.oxidns call logs_recen
 
 DIST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/luci-app-oxidns-dist.XXXXXX")"
 scripts/build-luci-package.sh 0.1.0 "$DIST_DIR" >/dev/null
-ar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" debian-binary
-ar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz
-ar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz
-ar_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz postinst
-ar_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz postrm
-ar_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz etc/init.d/oxidns
-ar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" data.tar.gz
-ar_nested_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" control.tar.gz postinst
+tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" debian-binary
+tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz
+tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz
+tar_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz postinst
+tar_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz postrm
+tar_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz etc/init.d/oxidns
+tar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" data.tar.gz
+tar_nested_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" control.tar.gz postinst
 tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .PKGINFO
 tar_member_contains "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .PKGINFO '^arch = noarch$'
 tar_member_contains "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .PKGINFO '^datahash = [0-9a-f][0-9a-f]*$'
