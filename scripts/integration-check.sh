@@ -59,6 +59,7 @@ ln -s /etc/passwd "$UNSAFE_DIR/oxidns"
 tar -czf "$UNSAFE_UPLOAD" -C "$UNSAFE_DIR" oxidns
 printf '{"path":"%s"}' "$UNSAFE_UPLOAD" | root/usr/libexec/rpcd/luci.oxidns call core_upload_install | json_ok "v.ok === false && v.code === 'uploaded_archive_unsafe'"
 rm -rf "$UNSAFE_DIR"
+printf '%s' '{"content":""}' | root/usr/libexec/rpcd/luci.oxidns call config_validate | json_ok "v.ok === false && v.code === 'missing_content'"
 root/usr/libexec/rpcd/luci.oxidns call config_read | json_ok "v.ok === false && v.code === 'config_not_found'"
 root/usr/libexec/rpcd/luci.oxidns call settings_read | json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.core_bundle === 'full' && v.github_token_set === false && !('api_base_url' in v)"
 printf '%s' '{"limit":"20"}' | root/usr/libexec/rpcd/luci.oxidns call logs_recent | json_ok "v.ok === true && v.source === 'logread' && Array.isArray(v.lines) && !('entries' in v)"

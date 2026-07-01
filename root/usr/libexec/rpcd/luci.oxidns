@@ -460,6 +460,12 @@ input_value() {
 	fi
 }
 
+input_has_key() {
+	KEY="$1"
+	INPUT="$2"
+	printf '%s' "$INPUT" | grep -q "\"$KEY\"[[:space:]]*:"
+}
+
 validate_config_file() {
 	FILE="$1"
 	load_settings
@@ -475,7 +481,12 @@ emit_config_validate() {
 	INPUT="$(cat)"
 	CONTENT="$(input_value content "$INPUT")"
 	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-config.XXXXXX")"
-	if [ -n "$CONTENT" ]; then
+	if input_has_key content "$INPUT"; then
+		if [ -z "$CONTENT" ]; then
+			rm -f "$TMP_FILE"
+			json_error "missing_content" "configuration content is required"
+			return 1
+		fi
 		printf '%s' "$CONTENT" > "$TMP_FILE"
 	elif [ -r "$CONFIG_PATH" ]; then
 		cp "$CONFIG_PATH" "$TMP_FILE"
@@ -1065,11 +1076,16 @@ install_core_from_release() {
 		CONFIG_CHECK_OUTPUT="${CONFIG_CHECK_OUTPUT:-configuration check failed}"
 	fi
 	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
-		if "$INIT" start >/dev/null 2>&1; then
+		SERVICE_OUT="$(mktemp "$TMP_ROOT/oxidns-service.XXXXXX")"
+		if "$INIT" start >"$SERVICE_OUT" 2>&1; then
 			SERVICE_RESTART="requested"
 		else
-			SERVICE_RESTART="failed"
+			MSG="$(cat "$SERVICE_OUT" 2>/dev/null || true)"
+			rm -f "$SERVICE_OUT"
+			core_install_error "service_restart_failed" "core installed, but service restart failed: ${MSG:-service restart failed}"
+			return 1
 		fi
+		rm -f "$SERVICE_OUT"
 	fi
 
 	rm -rf "$CORE_TMP_DIR"
@@ -1220,11 +1236,16 @@ install_uploaded_core_from_unpack() {
 	fi
 
 	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
-		if "$INIT" start >/dev/null 2>&1; then
+		SERVICE_OUT="$(mktemp "$TMP_ROOT/oxidns-service.XXXXXX")"
+		if "$INIT" start >"$SERVICE_OUT" 2>&1; then
 			SERVICE_RESTART="requested"
 		else
-			SERVICE_RESTART="failed"
+			MSG="$(cat "$SERVICE_OUT" 2>/dev/null || true)"
+			rm -f "$SERVICE_OUT"
+			upload_core_error "service_restart_failed" "core installed, but service restart failed: ${MSG:-service restart failed}"
+			return 1
 		fi
+		rm -f "$SERVICE_OUT"
 	fi
 
 	BUILD_JSON="$(build_info_json)"
