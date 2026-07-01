@@ -46,6 +46,13 @@ tar_nested_has_member() {
 	return 1
 }
 
+assert_unsafe_upload_rejected() {
+	upload="$1"
+	printf '{"path":"%s"}' "$upload" |
+		root/usr/libexec/rpcd/luci.oxidns call core_upload_install |
+		json_ok "v.ok === false && v.code === 'uploaded_archive_unsafe'"
+}
+
 scripts/check.sh
 
 root/usr/libexec/rpcd/luci.oxidns list | json_ok "'status' in v && 'core_install' in v && 'core_reinstall' in v && 'core_upload_install' in v && 'core_remove' in v && 'logs_recent' in v && 'settings_read' in v && !('config_basic_read' in v) && !('config_basic_save' in v)"
@@ -56,8 +63,13 @@ UNSAFE_UPLOAD="$(mktemp "/tmp/oxidns-core-upload-unsafe.XXXXXX")"
 UNSAFE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-core-upload-unsafe-dir.XXXXXX")"
 rm -f "$UNSAFE_UPLOAD"
 ln -s /etc/passwd "$UNSAFE_DIR/oxidns"
-tar -czf "$UNSAFE_UPLOAD" -C "$UNSAFE_DIR" oxidns
-printf '{"path":"%s"}' "$UNSAFE_UPLOAD" | root/usr/libexec/rpcd/luci.oxidns call core_upload_install | json_ok "v.ok === false && v.code === 'uploaded_archive_unsafe'"
+tar -czf "$UNSAFE_UPLOAD" -C "$UNSAFE_DIR" oxidns 2>/dev/null
+assert_unsafe_upload_rejected "$UNSAFE_UPLOAD"
+rm -f "$UNSAFE_UPLOAD" "$UNSAFE_DIR/oxidns"
+mkfifo "$UNSAFE_DIR/oxidns"
+tar -czf "$UNSAFE_UPLOAD" -C "$UNSAFE_DIR" oxidns 2>/dev/null
+assert_unsafe_upload_rejected "$UNSAFE_UPLOAD"
+rm -f "$UNSAFE_UPLOAD"
 rm -rf "$UNSAFE_DIR"
 printf '%s' '{"content":""}' | root/usr/libexec/rpcd/luci.oxidns call config_validate | json_ok "v.ok === false && v.code === 'missing_content'"
 root/usr/libexec/rpcd/luci.oxidns call config_read | json_ok "v.ok === false && v.code === 'config_not_found'"
