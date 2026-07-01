@@ -23,8 +23,8 @@ opkg install ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk
 On OpenWrt systems using `apk`:
 
 ```sh
-apk add --allow-untrusted ./luci-app-oxidns_0.1.0-r1_all.apk
-apk add --allow-untrusted ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
+apk add --allow-untrusted --no-network ./luci-app-oxidns_0.1.0-r1_all.apk
+apk add --allow-untrusted --no-network ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
 ```
 
 If the menu does not appear after installation, restart `rpcd`:

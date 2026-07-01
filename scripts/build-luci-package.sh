@@ -20,11 +20,46 @@ need_cmd() {
 need_cmd tar
 need_cmd gzip
 need_cmd node
+need_cmd sha256sum
+
+export COPYFILE_DISABLE=1
 
 tar_create_gz() {
-	out="$1"
+	tar_gz_out="$1"
 	shift
-	tar --format=ustar --owner=0 --group=0 --numeric-owner -czf "$out" "$@"
+	tar --format=ustar --owner=0 --group=0 --numeric-owner -czf "$tar_gz_out" "$@"
+}
+
+write_file_list() {
+	file_list_dir="$1"
+	file_list_out="$2"
+	(
+		cd "$file_list_dir"
+		find . ! -name . ! -type d | sed 's#^\./##' | LC_ALL=C sort
+	) > "$file_list_out"
+}
+
+tar_create_gz_from_list() {
+	tar_list_gz_out="$1"
+	tar_list_gz_dir="$2"
+	tar_list_gz_list="$3"
+	tar --format=ustar --owner=0 --group=0 --numeric-owner -czf "$tar_list_gz_out" -C "$tar_list_gz_dir" -T "$tar_list_gz_list"
+}
+
+tar_create_segment_gz_from_list() {
+	tar_segment_out="$1"
+	tar_segment_dir="$2"
+	tar_segment_list="$3"
+	tar_segment_raw="${tar_segment_out%.gz}"
+	tar_segment_cut="$tar_segment_raw.cut"
+
+	tar --format=ustar --owner=0 --group=0 --numeric-owner -cf "$tar_segment_raw" -C "$tar_segment_dir" -T "$tar_segment_list"
+	node scripts/strip-tar-eof.mjs "$tar_segment_raw" "$tar_segment_cut"
+	gzip -9n < "$tar_segment_cut" > "$tar_segment_out"
+}
+
+installed_size() {
+	find "$1" -type f -exec wc -c {} + | awk 'END { print $1 + 0 }'
 }
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/luci-app-oxidns-build.XXXXXX")"
@@ -34,17 +69,42 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 create_ipk() {
-	out="$1"
-	control_tar="$2"
-	data_tar="$3"
-	ipk_dir="$TMP_DIR/ipk-$(basename "$out" .ipk)"
+	ipk_out="$1"
+	ipk_control_tar="$2"
+	ipk_data_tar="$3"
 
-	rm -rf "$ipk_dir"
-	mkdir -p "$ipk_dir"
-	cp "$TMP_DIR/debian-binary" "$ipk_dir/debian-binary"
-	cp "$control_tar" "$ipk_dir/control.tar.gz"
-	cp "$data_tar" "$ipk_dir/data.tar.gz"
-	tar_create_gz "$out" -C "$ipk_dir" .
+	node scripts/write-ar.mjs "$ipk_out" \
+		"$TMP_DIR/debian-binary" \
+		"$ipk_control_tar" \
+		"$ipk_data_tar"
+}
+
+create_apk() {
+	apk_out="$1"
+	apk_control_dir="$2"
+	apk_data_dir="$3"
+	apk_name="$(basename "$apk_out" .apk)"
+	apk_data_list="$TMP_DIR/$apk_name.data.list"
+	apk_control_list="$TMP_DIR/$apk_name.control.list"
+	apk_data_tar="$TMP_DIR/$apk_name.data.tar.gz"
+	apk_control_tar="$TMP_DIR/$apk_name.control.tar.gz"
+	apk_datahash=""
+
+	write_file_list "$apk_data_dir" "$apk_data_list"
+	tar_create_gz_from_list "$apk_data_tar" "$apk_data_dir" "$apk_data_list"
+	apk_datahash="$(sha256sum "$apk_data_tar" | awk '{ print $1 }')"
+	printf 'datahash = %s\n' "$apk_datahash" >> "$apk_control_dir/.PKGINFO"
+
+	{
+		printf '.PKGINFO\n'
+		(
+			cd "$apk_control_dir"
+			find . ! -name . ! -name .PKGINFO | sed 's#^\./##' | LC_ALL=C sort
+		)
+	} > "$apk_control_list"
+
+	tar_create_segment_gz_from_list "$apk_control_tar" "$apk_control_dir" "$apk_control_list"
+	cat "$apk_control_tar" "$apk_data_tar" > "$apk_out"
 }
 
 write_rpcd_restart_script() {
@@ -82,9 +142,11 @@ EOF
 
 CONTROL_DIR="$TMP_DIR/control"
 DATA_DIR="$TMP_DIR/data"
+APK_CONTROL_DIR="$TMP_DIR/apk-control"
 I18N_CONTROL_DIR="$TMP_DIR/i18n-control"
 I18N_DATA_DIR="$TMP_DIR/i18n-data"
-mkdir -p "$CONTROL_DIR" "$DATA_DIR" "$OUT_DIR"
+I18N_APK_CONTROL_DIR="$TMP_DIR/i18n-apk-control"
+mkdir -p "$CONTROL_DIR" "$DATA_DIR" "$APK_CONTROL_DIR" "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
 cat > "$CONTROL_DIR/control" <<EOF
@@ -119,32 +181,34 @@ tar_create_gz "$TMP_DIR/control.tar.gz" -C "$CONTROL_DIR" .
 tar_create_gz "$TMP_DIR/data.tar.gz" -C "$DATA_DIR" .
 create_ipk "$OUT_DIR/${PKG_FILE_BASE}.ipk" "$TMP_DIR/control.tar.gz" "$TMP_DIR/data.tar.gz"
 
-cat > "$DATA_DIR/.PKGINFO" <<EOF
+cat > "$APK_CONTROL_DIR/.PKGINFO" <<EOF
 pkgname = $PKG_NAME
 pkgver = $PKG_VERSION-r1
 pkgdesc = LuCI support for OxiDNS
 url = https://github.com/svenshi/luci-app-oxidns
 builddate = $(date +%s)
 packager = Sven Shi <isvenshi@gmail.com>
-arch = all
+size = $(installed_size "$DATA_DIR")
+arch = noarch
 origin = $PKG_NAME
+license = GPL-3.0-or-later
 depend = luci-base
 depend = rpcd
 depend = jsonfilter
 depend = uclient-fetch
 depend = ca-bundle
 EOF
-write_rpcd_restart_script "$DATA_DIR/.post-install"
-cp "$DATA_DIR/.post-install" "$DATA_DIR/.post-upgrade"
-cp "$DATA_DIR/.post-install" "$DATA_DIR/.post-deinstall"
+write_rpcd_restart_script "$APK_CONTROL_DIR/.post-install"
+cp "$APK_CONTROL_DIR/.post-install" "$APK_CONTROL_DIR/.post-upgrade"
+cp "$APK_CONTROL_DIR/.post-install" "$APK_CONTROL_DIR/.post-deinstall"
 
-tar_create_gz "$OUT_DIR/${PKG_FILE_BASE}.apk" -C "$DATA_DIR" .
+create_apk "$OUT_DIR/${PKG_FILE_BASE}.apk" "$APK_CONTROL_DIR" "$DATA_DIR"
 
 printf 'Wrote %s\n' "$OUT_DIR/${PKG_FILE_BASE}.ipk"
 printf 'Wrote %s\n' "$OUT_DIR/${PKG_FILE_BASE}.apk"
 
 if [ -f po/zh_Hans/oxidns.po ]; then
-	mkdir -p "$I18N_CONTROL_DIR" "$I18N_DATA_DIR/usr/lib/lua/luci/i18n" "$I18N_DATA_DIR/etc/uci-defaults"
+	mkdir -p "$I18N_CONTROL_DIR" "$I18N_APK_CONTROL_DIR" "$I18N_DATA_DIR/usr/lib/lua/luci/i18n" "$I18N_DATA_DIR/etc/uci-defaults"
 
 	cat > "$I18N_CONTROL_DIR/control" <<-EOF
 	Package: $I18N_PKG_NAME
@@ -171,30 +235,38 @@ Priority: optional
 	tar_create_gz "$TMP_DIR/data.tar.gz" -C "$I18N_DATA_DIR" .
 	create_ipk "$OUT_DIR/${I18N_FILE_BASE}.ipk" "$TMP_DIR/control.tar.gz" "$TMP_DIR/data.tar.gz"
 
-	cat > "$I18N_DATA_DIR/.PKGINFO" <<-EOF
+	cat > "$I18N_APK_CONTROL_DIR/.PKGINFO" <<-EOF
 	pkgname = $I18N_PKG_NAME
 	pkgver = $PKG_VERSION-r1
 	pkgdesc = Simplified Chinese translation for luci-app-oxidns
 	url = https://github.com/svenshi/luci-app-oxidns
 	builddate = $(date +%s)
 	packager = Sven Shi <isvenshi@gmail.com>
-	arch = all
+	size = $(installed_size "$I18N_DATA_DIR")
+	arch = noarch
 	origin = $I18N_PKG_NAME
+	license = GPL-3.0-or-later
 	depend = $PKG_NAME
 	EOF
-	write_i18n_postinst_script "$I18N_DATA_DIR/.post-install"
-	cp "$I18N_DATA_DIR/.post-install" "$I18N_DATA_DIR/.post-upgrade"
+	write_i18n_postinst_script "$I18N_APK_CONTROL_DIR/.post-install"
+	cp "$I18N_APK_CONTROL_DIR/.post-install" "$I18N_APK_CONTROL_DIR/.post-upgrade"
 
-	tar_create_gz "$OUT_DIR/${I18N_FILE_BASE}.apk" -C "$I18N_DATA_DIR" .
+	create_apk "$OUT_DIR/${I18N_FILE_BASE}.apk" "$I18N_APK_CONTROL_DIR" "$I18N_DATA_DIR"
 
-	sha256sum \
-		"$OUT_DIR/${PKG_FILE_BASE}.ipk" \
-		"$OUT_DIR/${PKG_FILE_BASE}.apk" \
-		"$OUT_DIR/${I18N_FILE_BASE}.ipk" \
-		"$OUT_DIR/${I18N_FILE_BASE}.apk" > "$OUT_DIR/sha256sums.txt"
+	(
+		cd "$OUT_DIR"
+		sha256sum \
+			"${PKG_FILE_BASE}.ipk" \
+			"${PKG_FILE_BASE}.apk" \
+			"${I18N_FILE_BASE}.ipk" \
+			"${I18N_FILE_BASE}.apk"
+	) > "$OUT_DIR/sha256sums.txt"
 
 	printf 'Wrote %s\n' "$OUT_DIR/${I18N_FILE_BASE}.ipk"
 	printf 'Wrote %s\n' "$OUT_DIR/${I18N_FILE_BASE}.apk"
 else
-	sha256sum "$OUT_DIR/${PKG_FILE_BASE}.ipk" "$OUT_DIR/${PKG_FILE_BASE}.apk" > "$OUT_DIR/sha256sums.txt"
+	(
+		cd "$OUT_DIR"
+		sha256sum "${PKG_FILE_BASE}.ipk" "${PKG_FILE_BASE}.apk"
+	) > "$OUT_DIR/sha256sums.txt"
 fi
