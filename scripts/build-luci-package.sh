@@ -24,7 +24,7 @@ need_cmd node
 tar_create_gz() {
 	out="$1"
 	shift
-	tar --format=ustar --uid 0 --gid 0 --uname root --gname root -czf "$out" "$@"
+	tar --format=ustar --owner=0 --group=0 --numeric-owner -czf "$out" "$@"
 }
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/luci-app-oxidns-build.XXXXXX")"
