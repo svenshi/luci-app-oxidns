@@ -2,15 +2,14 @@
 
 Language: [中文](./README.md) | English
 
-`luci-app-oxidns` is the LuCI management app for OxiDNS on OpenWrt. After installation, LuCI adds `Services -> OxiDNS` pages for managing installation, service state, configuration, and logs.
+`luci-app-oxidns` is the LuCI management app for OxiDNS on OpenWrt. After installation, LuCI adds `Services -> OxiDNS` pages for installing the OxiDNS core binary, managing the OpenWrt service, editing configuration, and viewing logs.
 
-This LuCI app does not embed the OxiDNS runtime binary. The actual runtime is the OpenWrt package named `oxidns`, published by `svenshi/oxidns-openwrt-packages`. LuCI reads its manifest and selects the package that matches the current device architecture.
+This app does not embed the OxiDNS core binary and no longer manages a separate OpenWrt `oxidns` runtime package. LuCI downloads the official OxiDNS GitHub Release archive, verifies the SHA256 digest, and installs the binary as an OpenWrt service. Future OxiDNS core upgrades are handled by OxiDNS itself; LuCI does not provide core-upgrade or LuCI-app self-upgrade buttons.
 
 ## What To Install
 
-- `luci-app-oxidns`: the LuCI management pages.
+- `luci-app-oxidns`: LuCI pages, rpcd backend, and OpenWrt init service script.
 - `luci-i18n-oxidns-zh-cn`: optional Simplified Chinese translation package.
-- `oxidns`: the actual OxiDNS runtime package, installed or upgraded from the LuCI `Package` page.
 
 ## Install The LuCI App
 
@@ -36,67 +35,61 @@ If the menu does not appear after installation, restart `rpcd`:
 
 Then open LuCI: `Services -> OxiDNS`.
 
-## Install Or Upgrade OxiDNS Core
+## Install OxiDNS Core
 
-The LuCI `Package` page reads available OxiDNS runtime packages from a manifest. After the package repository is public and GitHub Pages is enabled, the default manifest URL is:
+If you are migrating from the old OpenWrt `oxidns` package model, stop the service and remove the old runtime package first so it no longer owns `/usr/bin/oxidns` or `/etc/init.d/oxidns`:
 
-```text
-https://svenshi.github.io/oxidns-openwrt-packages/manifest.json
+```sh
+/etc/init.d/oxidns stop
+opkg remove oxidns
 ```
 
-If GitHub Pages is temporarily unavailable, you can use a manifest from a specific GitHub Release, for example:
+On systems using `apk`, run:
 
-```text
-https://github.com/svenshi/oxidns-openwrt-packages/releases/download/v1.4.0/manifest.json
+```sh
+/etc/init.d/oxidns stop
+apk del oxidns
 ```
 
-Steps:
+1. Open `Services -> OxiDNS -> Settings` and confirm `Core repository` is `svenshi/oxidns` and `Core bundle` is `full`.
+2. Open `Services -> OxiDNS -> Core` and click `Install Core`. For offline installs, click `Upload Core` to upload an official `.tar.gz` archive or a single `oxidns` binary.
+3. After installation succeeds, use `Overview` to start and enable the service.
 
-1. Open `Services -> OxiDNS -> Settings` and confirm that `Manifest URL` is reachable.
-2. Open `Services -> OxiDNS -> Package` and click `Check for updates`.
-3. Click `Install` or `Upgrade` based on the result.
+LuCI selects the OxiDNS Linux musl release archive for the current CPU architecture, such as `oxidns-x86_64-unknown-linux-musl.tar.gz`. The GitHub release asset SHA256 digest is verified before installation.
 
-LuCI installs the package through the system package manager, `opkg` or `apk`, and verifies the SHA256 value from the manifest. The manifest lists available `ipk` and `apk` packages, and LuCI selects the package matching the current package manager and architecture.
+When the core is already installed, the `Core` page offers `Repair Reinstall` and `Upload Core`, which repair the binary or WebUI files by downloading the current installed version again or using an uploaded file. It does not install latest and is not an upgrade entry point.
 
 ## Main Pages
 
-- `Overview`: package, service, API, config path, and log status.
-- `Package`: check, install, upgrade, or remove the `oxidns` runtime package.
-- `Service`: start, stop, restart, enable, or disable the service.
-- `Config`: view, save, validate, back up, upload, or download the config file.
-- `Basic Config`: edit safe top-level configuration fields.
-- `Logs`: view runtime logs with refresh, pause, filter, and search controls.
-- `Settings`: configure manifest URL, proxy, API endpoint, config path, and working directory.
+- `Overview`: core, service, WebUI entry, config path, and log status.
+- `Core`: install, upload install, repair reinstall, or remove the OxiDNS core binary.
+- `Configuration`: view, save, and validate the config file.
+- `Logs`: view runtime logs with refresh and pause controls.
+- `Settings`: configure core repository, bundle, proxy, config path, and working directory.
 
 ## Default Paths
 
 - Binary: `/usr/bin/oxidns`
+- WebUI: `/usr/share/oxidns/webui`
 - Config: `/etc/oxidns/config.yaml`
 - Working directory: `/var/lib/oxidns`
 - Init script: `/etc/init.d/oxidns`
-- API endpoint: `http://127.0.0.1:9199/api`
 
 ## Upgrade And Remove
 
-To upgrade the LuCI app, download and install the newer `luci-app-oxidns` package.
+To upgrade the OxiDNS core, use the upgrade feature built into OxiDNS itself, such as the core WebUI / API / CLI upgrade flow. LuCI does not provide a core-upgrade entry point.
 
-To upgrade the OxiDNS runtime, use the LuCI `Package` page. You can also download the matching `oxidns` package manually and install it with `opkg install`.
+To upgrade the LuCI app, download and install the newer `luci-app-oxidns` package. The LuCI UI does not provide self-upgrade.
 
-To remove the OxiDNS runtime from the command line:
-
-```sh
-opkg remove oxidns
-```
-
-Removing the runtime package should preserve `/etc/oxidns/config.yaml` and `/var/lib/oxidns` by default, so reinstalling or upgrading later can reuse existing state.
+To remove the OxiDNS core, click `Remove Core` on the LuCI `Core` page. This stops and disables the service, removes `/usr/bin/oxidns` and `/usr/share/oxidns/webui`, and preserves `/etc/oxidns/config.yaml` and `/var/lib/oxidns`.
 
 ## Private Repositories And Downloads
 
-The router must be able to reach the manifest and package files directly. While the package repository is private, GitHub Pages may be unavailable and release files may not be directly downloadable by the router. After public release, use the GitHub Pages manifest URL when possible.
+The router must be able to reach GitHub Releases and release archives directly. For private repositories or restricted networks, configure a GitHub token or download proxy in `Settings`. Tokens are never shown again after saving. A configured download proxy requires `curl`; otherwise LuCI returns a clear error. You can also use `Upload Core` on the `Core` page to install an archive or binary offline.
 
 ## Known Limitations
 
-- The `Package` page depends on `openwrt_arch` in the manifest matching the architecture reported by the device package manager.
-- OxiDNS OpenWrt runtime packages are published as both `ipk` and `apk`, but the matching architecture must still be present in the manifest.
-- `Basic Config` only edits safe top-level fields and does not edit complex plugin configuration.
-- The log page prefers the OxiDNS API and falls back to OpenWrt `logread` when the API is unavailable.
+- Only published OxiDNS Linux musl release targets are supported.
+- The `Core` page handles first install, upload install, and repair reinstall only, not version upgrades.
+- The `Overview` WebUI entry is generated from the HTTP listen address in the config file. If it listens on `127.0.0.1`, LuCI keeps the link and shows a hint that local access or an SSH tunnel is required.
+- The log page reads OxiDNS service stdout/stderr output from OpenWrt `logread`.

@@ -11,46 +11,22 @@ msgstr ""
 msgid "A token is currently configured. Enter a new value to replace it."
 msgstr ""
 
-msgid "API URL"
-msgstr ""
-
-msgid "API base URL"
-msgstr ""
-
-msgid "API listen"
-msgstr ""
-
-msgid "API ready"
-msgstr ""
-
 msgid "Actions"
-msgstr ""
-
-msgid "All"
-msgstr ""
-
-msgid "Application status"
 msgstr ""
 
 msgid "Applying service action..."
 msgstr ""
 
-msgid "Basic Settings"
+msgid "Available"
 msgstr ""
 
-msgid "Basic settings only update existing top-level fields and never modify the plugins section."
-msgstr ""
-
-msgid "Binary present"
+msgid "Binary path"
 msgstr ""
 
 msgid "Build"
 msgstr ""
 
-msgid "Check for updates"
-msgstr ""
-
-msgid "Checking package manifest..."
+msgid "Bundle"
 msgstr ""
 
 msgid "Clear"
@@ -62,16 +38,28 @@ msgstr ""
 msgid "Configuration"
 msgstr ""
 
-msgid "Configure LuCI integration paths, package manifest sources, and optional download credentials."
+msgid "Configure OxiDNS core download sources, runtime paths, and optional download credentials."
 msgstr ""
 
 msgid "Control the OpenWrt init service for OxiDNS."
 msgstr ""
 
-msgid "Core Package"
+msgid "Core"
 msgstr ""
 
-msgid "Current version"
+msgid "Core Status"
+msgstr ""
+
+msgid "Core bundle"
+msgstr ""
+
+msgid "Core operation completed."
+msgstr ""
+
+msgid "Core operation failed"
+msgstr ""
+
+msgid "Core repository"
 msgstr ""
 
 msgid "Disable"
@@ -80,13 +68,10 @@ msgstr ""
 msgid "Download proxy"
 msgstr ""
 
-msgid "Edit the full YAML configuration or adjust supported top-level settings. Plugin configuration is only available in the YAML editor."
+msgid "Edit, validate, and save the full OxiDNS YAML configuration file."
 msgstr ""
 
 msgid "Enable"
-msgstr ""
-
-msgid "Entries"
 msgstr ""
 
 msgid "Error"
@@ -95,46 +80,34 @@ msgstr ""
 msgid "Failed to save settings"
 msgstr ""
 
-msgid "Filter logs"
-msgstr ""
-
-msgid "Full YAML editing is the advanced path for plugins and routing behavior."
-msgstr ""
-
 msgid "GitHub token"
 msgstr ""
 
-msgid "Install"
+msgid "Install Core"
 msgstr ""
 
-msgid "Install mode"
-msgstr ""
-
-msgid "Install, upgrade, or remove the package-managed OxiDNS runtime."
+msgid "Install or repair the OxiDNS core binary. Runtime upgrades are handled by OxiDNS itself."
 msgstr ""
 
 msgid "Installed"
 msgstr ""
 
-msgid "Installing OxiDNS package..."
+msgid "Installing OxiDNS core..."
 msgstr ""
 
-msgid "Latest version"
-msgstr ""
-
-msgid "Level"
-msgstr ""
-
-msgid "Log level"
+msgid "Installing uploaded OxiDNS core..."
 msgstr ""
 
 msgid "Logs"
 msgstr ""
 
-msgid "Manage the OxiDNS runtime, service, configuration, and logs from LuCI."
+msgid "LuCI backend"
 msgstr ""
 
-msgid "Manifest URL"
+msgid "LuCI can download the official OxiDNS release archive or install an uploaded .tar.gz archive or single oxidns binary. Future upgrades are handled by the OxiDNS core."
+msgstr ""
+
+msgid "Manage the OxiDNS runtime, service, configuration, and logs from LuCI."
 msgstr ""
 
 msgid "No"
@@ -152,6 +125,9 @@ msgstr ""
 msgid "Optional. The token is never shown after saving."
 msgstr ""
 
+msgid "Open WebUI"
+msgstr ""
+
 msgid "Overview"
 msgstr ""
 
@@ -161,7 +137,7 @@ msgstr ""
 msgid "OxiDNS Configuration"
 msgstr ""
 
-msgid "OxiDNS Core Package"
+msgid "OxiDNS Core"
 msgstr ""
 
 msgid "OxiDNS Logs"
@@ -170,25 +146,16 @@ msgstr ""
 msgid "OxiDNS Settings"
 msgstr ""
 
-msgid "Package"
+msgid "OxiDNS is already disabled on boot."
 msgstr ""
 
-msgid "Package Status"
+msgid "OxiDNS is already enabled on boot."
 msgstr ""
 
-msgid "Package feed URL"
+msgid "OxiDNS is already running."
 msgstr ""
 
-msgid "Package manager"
-msgstr ""
-
-msgid "Package operation completed."
-msgstr ""
-
-msgid "Package operation failed"
-msgstr ""
-
-msgid "Packages are downloaded from the configured OxiDNS OpenWrt package manifest and installed through the system package manager."
+msgid "OxiDNS is already stopped."
 msgstr ""
 
 msgid "Path"
@@ -197,22 +164,22 @@ msgstr ""
 msgid "Pause"
 msgstr ""
 
-msgid "Pending: %d"
-msgstr ""
-
-msgid "Ready"
-msgstr ""
-
 msgid "Refresh"
 msgstr ""
 
-msgid "Remove"
+msgid "Remove Core"
 msgstr ""
 
-msgid "Remove the OxiDNS core package? Configuration and runtime data should be preserved by the package scripts."
+msgid "Remove the OxiDNS core binary? Configuration and runtime data will be preserved."
 msgstr ""
 
-msgid "Removing OxiDNS package..."
+msgid "Removing OxiDNS core..."
+msgstr ""
+
+msgid "Repair Reinstall"
+msgstr ""
+
+msgid "Repair reinstalling OxiDNS core..."
 msgstr ""
 
 msgid "Restart"
@@ -221,40 +188,25 @@ msgstr ""
 msgid "Resume"
 msgstr ""
 
+msgid "Running"
+msgstr ""
+
 msgid "Save"
 msgstr ""
 
-msgid "Save & Reload"
-msgstr ""
-
-msgid "Save Basic"
-msgstr ""
-
-msgid "Save Basic & Reload"
+msgid "Save & Restart"
 msgstr ""
 
 msgid "Save Settings"
 msgstr ""
 
-msgid "Saving and reloading configuration..."
-msgstr ""
-
-msgid "Saving basic configuration and reloading..."
-msgstr ""
-
-msgid "Saving basic configuration..."
+msgid "Saving and restarting service..."
 msgstr ""
 
 msgid "Saving configuration..."
 msgstr ""
 
 msgid "Saving settings..."
-msgstr ""
-
-msgid "Search"
-msgstr ""
-
-msgid "Selected package"
 msgstr ""
 
 msgid "Service"
@@ -266,10 +218,7 @@ msgstr ""
 msgid "Service action failed"
 msgstr ""
 
-msgid "Service name"
-msgstr ""
-
-msgid "Service running"
+msgid "Service status"
 msgstr ""
 
 msgid "Settings"
@@ -278,16 +227,22 @@ msgstr ""
 msgid "Settings saved."
 msgstr ""
 
-msgid "Source"
-msgstr ""
-
 msgid "Start"
 msgstr ""
 
 msgid "Start on boot"
 msgstr ""
 
+msgid "Start the OxiDNS service before opening WebUI."
+msgstr ""
+
 msgid "Stop"
+msgstr ""
+
+msgid "Stopped"
+msgstr ""
+
+msgid "Target"
 msgstr ""
 
 msgid "Unable to query OxiDNS status"
@@ -296,16 +251,10 @@ msgstr ""
 msgid "Unavailable"
 msgstr ""
 
-msgid "Update available"
+msgid "Upload has been cancelled"
 msgstr ""
 
-msgid "Update check failed"
-msgstr ""
-
-msgid "Upgrade"
-msgstr ""
-
-msgid "Upgrading OxiDNS package..."
+msgid "Upload Core"
 msgstr ""
 
 msgid "Validate"
@@ -314,7 +263,19 @@ msgstr ""
 msgid "Validating configuration..."
 msgstr ""
 
-msgid "View recent OxiDNS logs. The page prefers OxiDNS API logs and falls back to OpenWrt logread."
+msgid "Version"
+msgstr ""
+
+msgid "View recent OxiDNS entries from OpenWrt logread."
+msgstr ""
+
+msgid "WebUI"
+msgstr ""
+
+msgid "WebUI files are not installed."
+msgstr ""
+
+msgid "WebUI listens on loopback only. Configure the HTTP listen address to a LAN-reachable address, or use an SSH tunnel."
 msgstr ""
 
 msgid "Working directory"

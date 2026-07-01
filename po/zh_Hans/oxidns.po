@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: luci-app-oxidns\n"
-"PO-Revision-Date: 2026-06-25 00:00+0000\n"
+"PO-Revision-Date: 2026-06-27 00:00+0000\n"
 "Last-Translator: Sven Shi <isvenshi@gmail.com>\n"
 "Language-Team: Chinese Simplified\n"
 "Language: zh_Hans\n"
@@ -13,47 +13,23 @@ msgstr ""
 msgid "A token is currently configured. Enter a new value to replace it."
 msgstr "当前已配置 Token。输入新值可替换现有 Token。"
 
-msgid "API URL"
-msgstr "API URL"
-
-msgid "API base URL"
-msgstr "API 基础 URL"
-
-msgid "API listen"
-msgstr "API 监听地址"
-
-msgid "API ready"
-msgstr "API 就绪"
-
 msgid "Actions"
 msgstr "操作"
-
-msgid "All"
-msgstr "全部"
-
-msgid "Application status"
-msgstr "应用状态"
 
 msgid "Applying service action..."
 msgstr "正在执行服务操作..."
 
-msgid "Basic Settings"
-msgstr "基础设置"
+msgid "Available"
+msgstr "可用"
 
-msgid "Basic settings only update existing top-level fields and never modify the plugins section."
-msgstr "基础设置只会更新已有的顶层字段，绝不会修改 plugins 部分。"
-
-msgid "Binary present"
-msgstr "二进制存在"
+msgid "Binary path"
+msgstr "二进制路径"
 
 msgid "Build"
 msgstr "构建信息"
 
-msgid "Check for updates"
-msgstr "检查更新"
-
-msgid "Checking package manifest..."
-msgstr "正在检查包 manifest..."
+msgid "Bundle"
+msgstr "Bundle"
 
 msgid "Clear"
 msgstr "清空"
@@ -64,17 +40,29 @@ msgstr "配置路径"
 msgid "Configuration"
 msgstr "配置"
 
-msgid "Configure LuCI integration paths, package manifest sources, and optional download credentials."
-msgstr "配置 LuCI 集成路径、包 manifest 来源和可选下载凭据。"
+msgid "Configure OxiDNS core download sources, runtime paths, and optional download credentials."
+msgstr "配置 OxiDNS 内核下载源、运行路径和可选下载凭据。"
 
 msgid "Control the OpenWrt init service for OxiDNS."
 msgstr "控制 OxiDNS 的 OpenWrt init 服务。"
 
-msgid "Core Package"
-msgstr "内核包"
+msgid "Core"
+msgstr "内核"
 
-msgid "Current version"
-msgstr "当前版本"
+msgid "Core Status"
+msgstr "内核状态"
+
+msgid "Core bundle"
+msgstr "内核 bundle"
+
+msgid "Core operation completed."
+msgstr "内核操作已完成。"
+
+msgid "Core operation failed"
+msgstr "内核操作失败"
+
+msgid "Core repository"
+msgstr "内核仓库"
 
 msgid "Disable"
 msgstr "禁用"
@@ -82,14 +70,11 @@ msgstr "禁用"
 msgid "Download proxy"
 msgstr "下载代理"
 
-msgid "Edit the full YAML configuration or adjust supported top-level settings. Plugin configuration is only available in the YAML editor."
-msgstr "编辑完整 YAML 配置，或调整受支持的顶层设置。插件配置只在 YAML 编辑器中提供。"
+msgid "Edit, validate, and save the full OxiDNS YAML configuration file."
+msgstr "编辑、校验并保存完整的 OxiDNS YAML 配置文件。"
 
 msgid "Enable"
 msgstr "启用"
-
-msgid "Entries"
-msgstr "条目"
 
 msgid "Error"
 msgstr "错误"
@@ -97,47 +82,35 @@ msgstr "错误"
 msgid "Failed to save settings"
 msgstr "保存设置失败"
 
-msgid "Filter logs"
-msgstr "过滤日志"
-
-msgid "Full YAML editing is the advanced path for plugins and routing behavior."
-msgstr "完整 YAML 编辑用于插件和路由行为等高级配置。"
-
 msgid "GitHub token"
 msgstr "GitHub Token"
 
-msgid "Install"
-msgstr "安装"
+msgid "Install Core"
+msgstr "安装内核"
 
-msgid "Install mode"
-msgstr "安装模式"
-
-msgid "Install, upgrade, or remove the package-managed OxiDNS runtime."
-msgstr "安装、升级或删除由包管理器管理的 OxiDNS 运行时。"
+msgid "Install or repair the OxiDNS core binary. Runtime upgrades are handled by OxiDNS itself."
+msgstr "安装或修复 OxiDNS 内核二进制。运行时升级由 OxiDNS 自身处理。"
 
 msgid "Installed"
 msgstr "已安装"
 
-msgid "Installing OxiDNS package..."
-msgstr "正在安装 OxiDNS 包..."
+msgid "Installing OxiDNS core..."
+msgstr "正在安装 OxiDNS 内核..."
 
-msgid "Latest version"
-msgstr "最新版本"
-
-msgid "Level"
-msgstr "级别"
-
-msgid "Log level"
-msgstr "日志级别"
+msgid "Installing uploaded OxiDNS core..."
+msgstr "正在安装上传的 OxiDNS 内核..."
 
 msgid "Logs"
 msgstr "日志"
 
+msgid "LuCI backend"
+msgstr "LuCI 后端"
+
+msgid "LuCI can download the official OxiDNS release archive or install an uploaded .tar.gz archive or single oxidns binary. Future upgrades are handled by the OxiDNS core."
+msgstr "LuCI 可以下载官方 OxiDNS release archive，也可以安装上传的 .tar.gz archive 或单个 oxidns 二进制。后续升级由 OxiDNS 内核自身处理。"
+
 msgid "Manage the OxiDNS runtime, service, configuration, and logs from LuCI."
 msgstr "在 LuCI 中管理 OxiDNS 运行时、服务、配置和日志。"
-
-msgid "Manifest URL"
-msgstr "Manifest URL"
 
 msgid "No"
 msgstr "否"
@@ -154,6 +127,9 @@ msgstr "操作失败"
 msgid "Optional. The token is never shown after saving."
 msgstr "可选。保存后不会再显示 Token。"
 
+msgid "Open WebUI"
+msgstr "打开 WebUI"
+
 msgid "Overview"
 msgstr "概览"
 
@@ -163,8 +139,8 @@ msgstr "OxiDNS"
 msgid "OxiDNS Configuration"
 msgstr "OxiDNS 配置"
 
-msgid "OxiDNS Core Package"
-msgstr "OxiDNS 内核包"
+msgid "OxiDNS Core"
+msgstr "OxiDNS 内核"
 
 msgid "OxiDNS Logs"
 msgstr "OxiDNS 日志"
@@ -172,26 +148,17 @@ msgstr "OxiDNS 日志"
 msgid "OxiDNS Settings"
 msgstr "OxiDNS 设置"
 
-msgid "Package"
-msgstr "包"
+msgid "OxiDNS is already disabled on boot."
+msgstr "OxiDNS 已经禁用开机自启。"
 
-msgid "Package Status"
-msgstr "包状态"
+msgid "OxiDNS is already enabled on boot."
+msgstr "OxiDNS 已经启用开机自启。"
 
-msgid "Package feed URL"
-msgstr "包 feed URL"
+msgid "OxiDNS is already running."
+msgstr "OxiDNS 已经在运行。"
 
-msgid "Package manager"
-msgstr "包管理器"
-
-msgid "Package operation completed."
-msgstr "包操作已完成。"
-
-msgid "Package operation failed"
-msgstr "包操作失败"
-
-msgid "Packages are downloaded from the configured OxiDNS OpenWrt package manifest and installed through the system package manager."
-msgstr "包会从已配置的 OxiDNS OpenWrt package manifest 下载，并通过系统包管理器安装。"
+msgid "OxiDNS is already stopped."
+msgstr "OxiDNS 已经停止。"
 
 msgid "Path"
 msgstr "路径"
@@ -199,23 +166,23 @@ msgstr "路径"
 msgid "Pause"
 msgstr "暂停"
 
-msgid "Pending: %d"
-msgstr "待显示：%d"
-
-msgid "Ready"
-msgstr "就绪"
-
 msgid "Refresh"
 msgstr "刷新"
 
-msgid "Remove"
-msgstr "删除"
+msgid "Remove Core"
+msgstr "删除内核"
 
-msgid "Remove the OxiDNS core package? Configuration and runtime data should be preserved by the package scripts."
-msgstr "确定删除 OxiDNS 内核包？配置和运行时数据应由包脚本保留。"
+msgid "Remove the OxiDNS core binary? Configuration and runtime data will be preserved."
+msgstr "确定删除 OxiDNS 内核二进制？配置和运行时数据会保留。"
 
-msgid "Removing OxiDNS package..."
-msgstr "正在删除 OxiDNS 包..."
+msgid "Removing OxiDNS core..."
+msgstr "正在删除 OxiDNS 内核..."
+
+msgid "Repair Reinstall"
+msgstr "修复重装"
+
+msgid "Repair reinstalling OxiDNS core..."
+msgstr "正在修复重装 OxiDNS 内核..."
 
 msgid "Restart"
 msgstr "重启"
@@ -223,41 +190,26 @@ msgstr "重启"
 msgid "Resume"
 msgstr "继续"
 
+msgid "Running"
+msgstr "运行中"
+
 msgid "Save"
 msgstr "保存"
 
-msgid "Save & Reload"
-msgstr "保存并重载"
-
-msgid "Save Basic"
-msgstr "保存基础设置"
-
-msgid "Save Basic & Reload"
-msgstr "保存基础设置并重载"
+msgid "Save & Restart"
+msgstr "保存并重启"
 
 msgid "Save Settings"
 msgstr "保存设置"
 
-msgid "Saving and reloading configuration..."
-msgstr "正在保存并重载配置..."
-
-msgid "Saving basic configuration and reloading..."
-msgstr "正在保存基础配置并重载..."
-
-msgid "Saving basic configuration..."
-msgstr "正在保存基础配置..."
+msgid "Saving and restarting service..."
+msgstr "正在保存并重启服务..."
 
 msgid "Saving configuration..."
 msgstr "正在保存配置..."
 
 msgid "Saving settings..."
 msgstr "正在保存设置..."
-
-msgid "Search"
-msgstr "搜索"
-
-msgid "Selected package"
-msgstr "已选择包"
 
 msgid "Service"
 msgstr "服务"
@@ -268,11 +220,8 @@ msgstr "服务操作已完成。"
 msgid "Service action failed"
 msgstr "服务操作失败"
 
-msgid "Service name"
-msgstr "服务名称"
-
-msgid "Service running"
-msgstr "服务运行中"
+msgid "Service status"
+msgstr "服务状态"
 
 msgid "Settings"
 msgstr "设置"
@@ -280,17 +229,23 @@ msgstr "设置"
 msgid "Settings saved."
 msgstr "设置已保存。"
 
-msgid "Source"
-msgstr "来源"
-
 msgid "Start"
 msgstr "启动"
 
 msgid "Start on boot"
 msgstr "开机自启"
 
+msgid "Start the OxiDNS service before opening WebUI."
+msgstr "请先启动 OxiDNS 服务再打开 WebUI。"
+
 msgid "Stop"
 msgstr "停止"
+
+msgid "Stopped"
+msgstr "已停止"
+
+msgid "Target"
+msgstr "目标架构"
 
 msgid "Unable to query OxiDNS status"
 msgstr "无法查询 OxiDNS 状态"
@@ -298,17 +253,11 @@ msgstr "无法查询 OxiDNS 状态"
 msgid "Unavailable"
 msgstr "不可用"
 
-msgid "Update available"
-msgstr "有可用更新"
+msgid "Upload has been cancelled"
+msgstr "上传已取消"
 
-msgid "Update check failed"
-msgstr "检查更新失败"
-
-msgid "Upgrade"
-msgstr "升级"
-
-msgid "Upgrading OxiDNS package..."
-msgstr "正在升级 OxiDNS 包..."
+msgid "Upload Core"
+msgstr "上传内核"
 
 msgid "Validate"
 msgstr "校验"
@@ -316,8 +265,20 @@ msgstr "校验"
 msgid "Validating configuration..."
 msgstr "正在校验配置..."
 
-msgid "View recent OxiDNS logs. The page prefers OxiDNS API logs and falls back to OpenWrt logread."
-msgstr "查看最近的 OxiDNS 日志。页面优先使用 OxiDNS API 日志，API 不可用时回退到 OpenWrt logread。"
+msgid "Version"
+msgstr "版本"
+
+msgid "View recent OxiDNS entries from OpenWrt logread."
+msgstr "查看 OpenWrt logread 中最近的 OxiDNS 条目。"
+
+msgid "WebUI"
+msgstr "WebUI"
+
+msgid "WebUI files are not installed."
+msgstr "WebUI 文件尚未安装。"
+
+msgid "WebUI listens on loopback only. Configure the HTTP listen address to a LAN-reachable address, or use an SSH tunnel."
+msgstr "WebUI 仅监听 loopback。请把 HTTP 监听地址配置为局域网可访问地址，或使用 SSH 隧道。"
 
 msgid "Working directory"
 msgstr "工作目录"

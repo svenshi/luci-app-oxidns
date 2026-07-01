@@ -19,6 +19,7 @@ var serviceCalls = {
 };
 
 var statusState = {};
+var serviceActionsKey = null;
 
 function valueOrDash(value) {
 	if (value === null || value === undefined || value === '')
@@ -30,10 +31,103 @@ function boolText(value) {
 	return value ? _('Yes') : _('No');
 }
 
+function serviceRunning(status) {
+	return !!(status && status.service_status && status.service_status.running);
+}
+
+function serviceEnabled(status) {
+	return !!(status && status.service_status && status.service_status.enabled);
+}
+
 function statusBadge(text, good) {
 	return E('span', {
 		'class': good ? 'label label-success' : 'label label-warning'
 	}, text);
+}
+
+function backendStatusBadge(status) {
+	return status && status.ok ? statusBadge(_('Available'), true) : statusBadge(_('Unavailable'), false);
+}
+
+function serviceStatusBadge(status) {
+	return serviceRunning(status) ? statusBadge(_('Running'), true) : statusBadge(_('Stopped'), false);
+}
+
+function localServiceHost(host) {
+	return host === 'localhost' ||
+		host === '127.0.0.1' ||
+		host === '0.0.0.0' ||
+		host === '::' ||
+		host === '::1' ||
+		host === '[::]' ||
+		host === '[::1]';
+}
+
+function browserWebuiUrl(status) {
+	var raw = status && status.webui && status.webui.url;
+	if (!raw)
+		return '';
+
+	try {
+		var url = new URL(raw, window.location.href);
+		if (!(status && status.webui && status.webui.local_only) && localServiceHost(url.hostname) && window.location.hostname)
+			url.hostname = window.location.hostname;
+		url.pathname = url.pathname || '/';
+		url.search = '';
+		url.hash = '';
+		return url.toString();
+	} catch (e) {
+		return raw;
+	}
+}
+
+function webuiReady(status) {
+	return !!(status && status.webui && status.webui.installed && serviceRunning(status) && browserWebuiUrl(status));
+}
+
+function webuiHint(status) {
+	if (!status || !status.webui || !status.webui.installed)
+		return _('WebUI files are not installed.');
+	if (!serviceRunning(status))
+		return _('Start the OxiDNS service before opening WebUI.');
+	if (status.webui.local_only)
+		return _('WebUI listens on loopback only. Configure the HTTP listen address to a LAN-reachable address, or use an SSH tunnel.');
+	return '';
+}
+
+function webuiButton(status) {
+	var url = browserWebuiUrl(status);
+	var ready = webuiReady(status);
+	var hint = webuiHint(status);
+
+	if (!ready) {
+		return E('button', {
+			'id': 'oxidns-webui-link',
+			'class': 'btn cbi-button cbi-button-neutral',
+			'type': 'button',
+			'disabled': 'disabled',
+			'title': hint
+		}, _('Open WebUI'));
+	}
+
+	return E('a', {
+		'id': 'oxidns-webui-link',
+		'class': 'btn cbi-button cbi-button-action',
+		'href': url,
+		'target': '_blank',
+		'rel': 'noopener'
+	}, _('Open WebUI'));
+}
+
+function webuiEntry(status) {
+	var hint = webuiHint(status);
+
+	return E('div', {
+		'style': 'display: flex; flex-wrap: wrap; gap: .75em; align-items: center;'
+	}, [
+		webuiButton(status),
+		hint ? E('span', { 'class': 'cbi-value-description' }, hint) : ''
+	]);
 }
 
 function renderRow(label, value, id) {
@@ -47,16 +141,17 @@ function renderRow(label, value, id) {
 	]);
 }
 
-function packageSummary(status) {
-	var pkg = status.package || {};
-	var pm = status.package_manager || {};
+function coreSummary(status) {
+	var core = status.core || {};
 	var parts = [];
 
-	parts.push(pkg.installed ? _('Installed') : _('Not installed'));
-	if (pkg.version)
-		parts.push(pkg.version);
-	if (pm.manager && pm.manager !== 'none')
-		parts.push('%s/%s'.format(pm.manager, pm.arch || 'unknown'));
+	parts.push(core.installed ? _('Installed') : _('Not installed'));
+	if (core.version)
+		parts.push(core.version);
+	if (core.bundle)
+		parts.push(core.bundle);
+	if (core.target)
+		parts.push(core.target);
 
 	return parts.join(' · ');
 }
@@ -68,27 +163,50 @@ function buildSummary(status) {
 	return '%s · %s'.format(build.version, build.bundle || 'unknown');
 }
 
+function setNodeContent(node, value) {
+	while (node.firstChild)
+		node.removeChild(node.firstChild);
+
+	if (value && value.nodeType)
+		node.appendChild(value);
+	else
+		node.textContent = valueOrDash(value);
+}
+
+function blockedActionMessage(action, status) {
+	if (action === 'start' && serviceRunning(status))
+		return _('OxiDNS is already running.');
+	if (action === 'stop' && !serviceRunning(status))
+		return _('OxiDNS is already stopped.');
+	if (action === 'enable' && serviceEnabled(status))
+		return _('OxiDNS is already enabled on boot.');
+	if (action === 'disable' && !serviceEnabled(status))
+		return _('OxiDNS is already disabled on boot.');
+	return null;
+}
+
 function refreshStatus() {
 	return L.resolveDefault(callStatus(), {}).then(function(status) {
 		statusState = status || {};
 
 		var fields = {
-			'oxidns-package': packageSummary(statusState),
+			'oxidns-backend-status': backendStatusBadge(statusState),
+			'oxidns-core': coreSummary(statusState),
 			'oxidns-build': buildSummary(statusState),
-			'oxidns-binary': boolText(statusState.binary_present),
-			'oxidns-service-running': boolText(statusState.service_status && statusState.service_status.running),
+			'oxidns-service-running': serviceStatusBadge(statusState),
 			'oxidns-service-enabled': boolText(statusState.service_status && statusState.service_status.enabled),
-			'oxidns-api-ready': boolText(statusState.api && statusState.api.ready),
+			'oxidns-webui': webuiEntry(statusState),
 			'oxidns-config-path': statusState.config_path,
-			'oxidns-working-dir': statusState.working_dir,
-			'oxidns-api-url': statusState.api_base_url
+			'oxidns-working-dir': statusState.working_dir
 		};
 
 		Object.keys(fields).forEach(function(id) {
 			var node = document.getElementById(id);
 			if (node)
-				node.textContent = valueOrDash(fields[id]);
+				setNodeContent(node, fields[id]);
 		});
+
+		updateServiceActions(statusState);
 	});
 }
 
@@ -96,6 +214,12 @@ function handleServiceAction(action) {
 	var call = serviceCalls[action];
 	if (!call)
 		return;
+
+	var blocked = blockedActionMessage(action, statusState);
+	if (blocked) {
+		ui.addNotification(null, E('p', {}, blocked), 'info');
+		return refreshStatus();
+	}
 
 	ui.showModal(_('OxiDNS'), [
 		E('p', {}, _('Applying service action...'))
@@ -107,22 +231,66 @@ function handleServiceAction(action) {
 			ui.addNotification(null, E('p', {}, (result && (result.message || result.error)) || _('Service action failed')), 'danger');
 			return;
 		}
-		ui.addNotification(null, E('p', {}, _('Service action completed.')), 'info');
-		return refreshStatus();
+		return refreshStatus().then(function() {
+			ui.addNotification(null, E('p', {}, _('Service action completed.')), 'info');
+		});
 	}).catch(function(err) {
 		ui.hideModal();
 		ui.addNotification(null, E('p', {}, err.message || String(err)), 'danger');
 	});
 }
 
-function actionButton(label, action, style) {
-	return E('button', {
+function actionButton(label, action, style, id) {
+	var attrs = {
+		'id': id,
 		'class': 'btn cbi-button cbi-button-%s'.format(style || 'neutral'),
 		'click': function(ev) {
 			ev.preventDefault();
 			return handleServiceAction(action);
 		}
-	}, label);
+	};
+
+	return E('button', attrs, label);
+}
+
+function serviceActionButtons(status) {
+	var actions = [];
+
+	if (serviceRunning(status)) {
+		actions.push(actionButton(_('Stop'), 'stop', 'negative', 'oxidns-service-stop'));
+		actions.push(actionButton(_('Restart'), 'restart', 'action', 'oxidns-service-restart'));
+	} else {
+		actions.push(actionButton(_('Start'), 'start', 'positive', 'oxidns-service-start'));
+	}
+
+	if (serviceEnabled(status))
+		actions.push(actionButton(_('Disable'), 'disable', 'neutral', 'oxidns-service-disable'));
+	else
+		actions.push(actionButton(_('Enable'), 'enable', 'positive', 'oxidns-service-enable'));
+
+	return actions;
+}
+
+function serviceActionStateKey(status) {
+	return '%s:%s'.format(serviceRunning(status) ? 'running' : 'stopped', serviceEnabled(status) ? 'enabled' : 'disabled');
+}
+
+function updateServiceActions(status) {
+	var node = document.getElementById('oxidns-service-actions');
+	if (!node)
+		return;
+
+	var nextKey = serviceActionStateKey(status);
+	if (nextKey === serviceActionsKey)
+		return;
+
+	serviceActionsKey = nextKey;
+	while (node.firstChild)
+		node.removeChild(node.firstChild);
+
+	serviceActionButtons(status).forEach(function(button) {
+		node.appendChild(button);
+	});
 }
 
 return view.extend({
@@ -137,21 +305,20 @@ return view.extend({
 		statusState = status || {};
 
 		var rows = [
-			renderRow(_('Application status'), status.ok ? statusBadge(_('Ready'), true) : statusBadge(_('Unavailable'), false)),
-			renderRow(_('Package'), packageSummary(status), 'oxidns-package'),
+			renderRow(_('LuCI backend'), backendStatusBadge(status), 'oxidns-backend-status'),
+			renderRow(_('Core'), coreSummary(status), 'oxidns-core'),
 			renderRow(_('Build'), buildSummary(status), 'oxidns-build'),
-			renderRow(_('Binary present'), boolText(status.binary_present), 'oxidns-binary'),
-			renderRow(_('Service running'), boolText(status.service_status && status.service_status.running), 'oxidns-service-running'),
+			renderRow(_('Service status'), serviceStatusBadge(status), 'oxidns-service-running'),
 			renderRow(_('Start on boot'), boolText(status.service_status && status.service_status.enabled), 'oxidns-service-enabled'),
-			renderRow(_('API ready'), boolText(status.api && status.api.ready), 'oxidns-api-ready'),
+			renderRow(_('WebUI'), webuiEntry(status), 'oxidns-webui'),
 			renderRow(_('Config path'), status.config_path || '/etc/oxidns/config.yaml', 'oxidns-config-path'),
-			renderRow(_('Working directory'), status.working_dir || '/var/lib/oxidns', 'oxidns-working-dir'),
-			renderRow(_('API URL'), status.api_base_url || '-', 'oxidns-api-url')
+			renderRow(_('Working directory'), status.working_dir || '/var/lib/oxidns', 'oxidns-working-dir')
 		];
 
 		if (status.error)
 			rows.push(renderRow(_('Error'), status.error));
 
+		serviceActionsKey = serviceActionStateKey(statusState);
 		poll.add(refreshStatus, 5);
 
 		return E('div', { 'class': 'cbi-map' }, [
@@ -166,17 +333,11 @@ return view.extend({
 				E('h3', {}, _('Service')),
 				E('div', { 'class': 'cbi-section-descr' },
 					_('Control the OpenWrt init service for OxiDNS.')),
-				E('div', { 'class': 'cbi-button-row' }, [
-					actionButton(_('Start'), 'start', 'positive'),
-					' ',
-					actionButton(_('Stop'), 'stop', 'negative'),
-					' ',
-					actionButton(_('Restart'), 'restart', 'action'),
-					' ',
-					actionButton(_('Enable'), 'enable', 'positive'),
-					' ',
-					actionButton(_('Disable'), 'disable', 'neutral')
-				])
+				E('div', {
+					'id': 'oxidns-service-actions',
+					'class': 'cbi-button-row',
+					'style': 'display: flex; flex-wrap: wrap; gap: .5em;'
+				}, serviceActionButtons(statusState))
 			])
 		]);
 	},

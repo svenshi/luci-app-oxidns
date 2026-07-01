@@ -6,6 +6,7 @@
 var callLogsRecent = rpc.declare({
 	object: 'luci.oxidns',
 	method: 'logs_recent',
+	params: [ 'limit' ],
 	expect: {}
 });
 
@@ -13,58 +14,69 @@ var state = {
 	lines: [],
 	pending: [],
 	paused: false,
-	source: '-',
-	level: 'all',
-	search: ''
+	followTail: true,
+	limit: 100
 };
 
 function byId(id) {
 	return document.getElementById(id);
 }
 
-function levelPasses(line) {
-	if (state.level === 'all')
-		return true;
-	return line.indexOf('[' + state.level + ']') >= 0 || line.indexOf(state.level) >= 0;
+function normalizeLines(result) {
+	var lines = result && result.lines;
+	return Array.isArray(lines) ? lines : [];
 }
 
-function searchPasses(line) {
-	if (!state.search)
-		return true;
-	return line.toLowerCase().indexOf(state.search.toLowerCase()) >= 0;
+function afterPaint(fn) {
+	if (window.requestAnimationFrame)
+		window.requestAnimationFrame(fn);
+	else
+		window.setTimeout(fn, 0);
 }
 
-function filteredLines() {
-	return state.lines.filter(function(line) {
-		return levelPasses(line) && searchPasses(line);
-	});
+function isNearBottom(node) {
+	return node.scrollHeight - node.scrollTop - node.clientHeight < 24;
+}
+
+function scrollLogToBottom() {
+	var log = byId('oxidns-log-lines');
+	if (log)
+		log.scrollTop = log.scrollHeight;
 }
 
 function renderLines() {
 	var log = byId('oxidns-log-lines');
-	var count = byId('oxidns-log-count');
-	var pending = byId('oxidns-log-pending');
-	var source = byId('oxidns-log-source');
+	if (!log)
+		return;
 
-	if (log)
-		log.textContent = filteredLines().join('\n');
-	if (count)
-		count.textContent = String(filteredLines().length);
-	if (pending)
-		pending.textContent = state.pending.length ? _('Pending: %d').format(state.pending.length) : '';
-	if (source)
-		source.textContent = state.source || '-';
+	var shouldFollow = state.followTail || isNearBottom(log);
+	log.textContent = state.lines.join('\n');
+
+	if (shouldFollow) {
+		state.followTail = true;
+		afterPaint(scrollLogToBottom);
+	}
+}
+
+function updatePauseButton() {
+	var button = byId('oxidns-log-pause-toggle');
+	if (!button)
+		return;
+
+	button.textContent = state.paused ? _('Resume') : _('Pause');
+	button.className = 'btn cbi-button cbi-button-%s'.format(state.paused ? 'positive' : 'neutral');
 }
 
 function refreshLogs() {
-	return L.resolveDefault(callLogsRecent({ limit: 300 }), null).then(function(result) {
+	return L.resolveDefault(callLogsRecent(state.limit), null).then(function(result) {
 		if (!result || result.ok === false)
 			return;
-		state.source = result.source || '-';
+
 		if (state.paused)
-			state.pending = result.lines || [];
+			state.pending = normalizeLines(result);
 		else
-			state.lines = result.lines || [];
+			state.lines = normalizeLines(result);
+
 		renderLines();
 	});
 }
@@ -75,7 +87,12 @@ function setPaused(paused) {
 		state.lines = state.pending;
 		state.pending = [];
 	}
+	updatePauseButton();
 	renderLines();
+}
+
+function togglePaused() {
+	return setPaused(!state.paused);
 }
 
 function controlButton(label, handler, style) {
@@ -90,86 +107,53 @@ function controlButton(label, handler, style) {
 
 return view.extend({
 	load: function() {
-		return L.resolveDefault(callLogsRecent({ limit: 300 }), {
+		return Promise.resolve({
 			ok: true,
-			source: '-',
+			source: 'logread',
 			lines: []
 		});
 	},
 
 	render: function(initial) {
-		state.lines = initial.lines || [];
-		state.source = initial.source || '-';
-		poll.add(refreshLogs, 3);
+		state.lines = normalizeLines(initial);
+		state.pending = [];
+		state.paused = false;
+		state.followTail = true;
+		window.setTimeout(refreshLogs, 0);
+		poll.add(refreshLogs, 1);
 
 		return E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, _('OxiDNS Logs')),
 			E('div', { 'class': 'cbi-map-descr' },
-				_('View recent OxiDNS logs. The page prefers OxiDNS API logs and falls back to OpenWrt logread.')),
+				_('View recent OxiDNS entries from OpenWrt logread.')),
 			E('div', { 'class': 'cbi-section' }, [
-				E('div', { 'class': 'cbi-button-row' }, [
-					controlButton(_('Pause'), function() { setPaused(true); }, 'neutral'),
-					' ',
-					controlButton(_('Resume'), function() { setPaused(false); }, 'positive'),
-					' ',
+				E('div', {
+					'class': 'cbi-button-row',
+					'style': 'display: flex; flex-wrap: wrap; gap: .5em; margin-bottom: 1.5em;'
+				}, [
+					E('button', {
+						'id': 'oxidns-log-pause-toggle',
+						'class': 'btn cbi-button cbi-button-neutral',
+						'click': function(ev) {
+							ev.preventDefault();
+							return togglePaused();
+						}
+					}, _('Pause')),
 					controlButton(_('Refresh'), refreshLogs, 'action'),
-					' ',
 					controlButton(_('Clear'), function() {
 						state.lines = [];
 						state.pending = [];
+						state.followTail = true;
 						renderLines();
 					}, 'negative')
 				]),
-				E('div', { 'class': 'table cbi-section-table' }, [
-					E('div', { 'class': 'tr' }, [
-						E('div', { 'class': 'td left', 'style': 'width: 160px' }, _('Source')),
-						E('div', { 'class': 'td left', 'id': 'oxidns-log-source' }, state.source)
-					]),
-					E('div', { 'class': 'tr' }, [
-						E('div', { 'class': 'td left' }, _('Entries')),
-						E('div', { 'class': 'td left' }, [
-							E('span', { 'id': 'oxidns-log-count' }, String(state.lines.length)),
-							' ',
-							E('span', { 'id': 'oxidns-log-pending' })
-						])
-					]),
-					E('div', { 'class': 'tr' }, [
-						E('div', { 'class': 'td left' }, _('Level')),
-						E('div', { 'class': 'td left' }, [
-							E('select', {
-								'class': 'cbi-input-select',
-								'change': function(ev) {
-									state.level = ev.target.value;
-									renderLines();
-								}
-							}, [
-								E('option', { 'value': 'all' }, _('All')),
-								E('option', { 'value': 'ERROR' }, 'ERROR'),
-								E('option', { 'value': 'WARN' }, 'WARN'),
-								E('option', { 'value': 'INFO' }, 'INFO'),
-								E('option', { 'value': 'DEBUG' }, 'DEBUG'),
-								E('option', { 'value': 'TRACE' }, 'TRACE')
-							])
-						])
-					]),
-					E('div', { 'class': 'tr' }, [
-						E('div', { 'class': 'td left' }, _('Search')),
-						E('div', { 'class': 'td left' }, [
-							E('input', {
-								'class': 'cbi-input-text',
-								'placeholder': _('Filter logs'),
-								'input': function(ev) {
-									state.search = ev.target.value || '';
-									renderLines();
-								}
-							})
-						])
-					])
-				]),
 				E('pre', {
 					'id': 'oxidns-log-lines',
-					'style': 'min-height: 480px; max-height: 70vh; overflow: auto; padding: 1em; background: #111; color: #ddd; white-space: pre-wrap;'
-				}, filteredLines().join('\n'))
+					'scroll': function(ev) {
+						state.followTail = isNearBottom(ev.target);
+					},
+					'style': 'min-height: 560px; max-height: 72vh; overflow: auto; margin-top: .25em; padding: 1em; background: #111; color: #ddd; white-space: pre-wrap; overflow-wrap: anywhere;'
+				}, state.lines.join('\n'))
 			])
 		]);
 	},

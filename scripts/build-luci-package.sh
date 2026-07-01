@@ -21,6 +21,12 @@ need_cmd tar
 need_cmd gzip
 need_cmd node
 
+tar_create_gz() {
+	out="$1"
+	shift
+	tar --format=ustar --uid 0 --gid 0 --uname root --gname root -czf "$out" "$@"
+}
+
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/luci-app-oxidns-build.XXXXXX")"
 cleanup() {
 	rm -rf "$TMP_DIR"
@@ -38,7 +44,22 @@ create_ipk() {
 	cp "$TMP_DIR/debian-binary" "$ipk_dir/debian-binary"
 	cp "$control_tar" "$ipk_dir/control.tar.gz"
 	cp "$data_tar" "$ipk_dir/data.tar.gz"
-	tar -czf "$out" -C "$ipk_dir" .
+	tar_create_gz "$out" -C "$ipk_dir" .
+}
+
+write_rpcd_restart_script() {
+	out="$1"
+	cat > "$out" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT:-}" ] && exit 0
+rm -f /tmp/luci-indexcache* 2>/dev/null || true
+rm -rf /tmp/luci-modulecache/* 2>/dev/null || true
+if [ -x /etc/init.d/rpcd ]; then
+	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+fi
+exit 0
+EOF
+	chmod 755 "$out"
 }
 
 CONTROL_DIR="$TMP_DIR/control"
@@ -53,7 +74,7 @@ Package: $PKG_NAME
 Version: $PKG_VERSION-r1
 Architecture: all
 Maintainer: Sven Shi <isvenshi@gmail.com>
-Depends: luci-base
+Depends: luci-base, rpcd, jsonfilter, uclient-fetch, ca-bundle
 Source: https://github.com/svenshi/luci-app-oxidns
 Section: luci
 Priority: optional
@@ -69,10 +90,15 @@ if [ -d root ]; then
 fi
 
 chmod 755 "$DATA_DIR/usr/libexec/rpcd/luci.oxidns"
+if [ -f "$DATA_DIR/etc/init.d/oxidns" ]; then
+	chmod 755 "$DATA_DIR/etc/init.d/oxidns"
+fi
+write_rpcd_restart_script "$CONTROL_DIR/postinst"
+write_rpcd_restart_script "$CONTROL_DIR/postrm"
 
 printf '2.0\n' > "$TMP_DIR/debian-binary"
-tar -czf "$TMP_DIR/control.tar.gz" -C "$CONTROL_DIR" .
-tar -czf "$TMP_DIR/data.tar.gz" -C "$DATA_DIR" .
+tar_create_gz "$TMP_DIR/control.tar.gz" -C "$CONTROL_DIR" .
+tar_create_gz "$TMP_DIR/data.tar.gz" -C "$DATA_DIR" .
 create_ipk "$OUT_DIR/${PKG_FILE_BASE}.ipk" "$TMP_DIR/control.tar.gz" "$TMP_DIR/data.tar.gz"
 
 cat > "$DATA_DIR/.PKGINFO" <<EOF
@@ -85,9 +111,16 @@ packager = Sven Shi <isvenshi@gmail.com>
 arch = all
 origin = $PKG_NAME
 depend = luci-base
+depend = rpcd
+depend = jsonfilter
+depend = uclient-fetch
+depend = ca-bundle
 EOF
+write_rpcd_restart_script "$DATA_DIR/.post-install"
+cp "$DATA_DIR/.post-install" "$DATA_DIR/.post-upgrade"
+cp "$DATA_DIR/.post-install" "$DATA_DIR/.post-deinstall"
 
-tar -czf "$OUT_DIR/${PKG_FILE_BASE}.apk" -C "$DATA_DIR" .
+tar_create_gz "$OUT_DIR/${PKG_FILE_BASE}.apk" -C "$DATA_DIR" .
 
 printf 'Wrote %s\n' "$OUT_DIR/${PKG_FILE_BASE}.ipk"
 printf 'Wrote %s\n' "$OUT_DIR/${PKG_FILE_BASE}.apk"
@@ -115,8 +148,8 @@ EOF
 
 	node scripts/po2lmo.mjs po/zh_Hans/oxidns.po "$I18N_DATA_DIR/usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo"
 
-	tar -czf "$TMP_DIR/control.tar.gz" -C "$I18N_CONTROL_DIR" .
-	tar -czf "$TMP_DIR/data.tar.gz" -C "$I18N_DATA_DIR" .
+	tar_create_gz "$TMP_DIR/control.tar.gz" -C "$I18N_CONTROL_DIR" .
+	tar_create_gz "$TMP_DIR/data.tar.gz" -C "$I18N_DATA_DIR" .
 	create_ipk "$OUT_DIR/${I18N_FILE_BASE}.ipk" "$TMP_DIR/control.tar.gz" "$TMP_DIR/data.tar.gz"
 
 	cat > "$I18N_DATA_DIR/.PKGINFO" <<EOF
@@ -131,7 +164,7 @@ origin = $I18N_PKG_NAME
 depend = $PKG_NAME
 EOF
 
-	tar -czf "$OUT_DIR/${I18N_FILE_BASE}.apk" -C "$I18N_DATA_DIR" .
+	tar_create_gz "$OUT_DIR/${I18N_FILE_BASE}.apk" -C "$I18N_DATA_DIR" .
 
 	sha256sum \
 		"$OUT_DIR/${PKG_FILE_BASE}.ipk" \

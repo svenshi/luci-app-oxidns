@@ -20,12 +20,12 @@
 			"acl": [ "luci-app-oxidns" ]
 		}
 	},
-	"admin/services/oxidns/package": {
-		"title": "Core Package",
+	"admin/services/oxidns/core": {
+		"title": "Core",
 		"order": 20,
 		"action": {
 			"type": "view",
-			"path": "oxidns/package"
+			"path": "oxidns/core"
 		},
 		"depends": {
 			"acl": [ "luci-app-oxidns" ]
