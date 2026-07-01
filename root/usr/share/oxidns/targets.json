@@ -3,27 +3,27 @@
 	"targets": [
 		{
 			"rust_target": "x86_64-unknown-linux-musl",
-			"openwrt_arches": [],
+			"uname_arches": [ "x86_64", "amd64" ],
 			"aliases": [ "x86_64", "amd64" ]
 		},
 		{
 			"rust_target": "aarch64-unknown-linux-musl",
-			"openwrt_arches": [],
+			"uname_arches": [ "aarch64", "arm64" ],
 			"aliases": [ "aarch64", "arm64" ]
 		},
 		{
 			"rust_target": "i686-unknown-linux-musl",
-			"openwrt_arches": [],
+			"uname_arches": [ "i386", "i686" ],
 			"aliases": [ "i386", "i686", "x86" ]
 		},
 		{
 			"rust_target": "arm-unknown-linux-musleabihf",
-			"openwrt_arches": [],
+			"uname_arches": [ "armv6l", "armv6" ],
 			"aliases": [ "arm", "armhf" ]
 		},
 		{
 			"rust_target": "armv7-unknown-linux-musleabihf",
-			"openwrt_arches": [],
+			"uname_arches": [ "armv7l", "armv7" ],
 			"aliases": [ "armv7", "armv7l" ]
 		}
 	]

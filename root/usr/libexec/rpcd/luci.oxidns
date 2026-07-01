@@ -5,18 +5,20 @@ set -eu
 UCI_PACKAGE="oxidns"
 UCI_SECTION="main"
 OXIDNS_BIN="/usr/bin/oxidns"
+WEBUI_DIR="/usr/share/oxidns/webui"
 DEFAULT_CONFIG_PATH="/etc/oxidns/config.yaml"
 DEFAULT_WORKING_DIR="/var/lib/oxidns"
 DEFAULT_SERVICE_NAME="oxidns"
-DEFAULT_API_BASE_URL="http://127.0.0.1:9199/api"
-DEFAULT_MANIFEST_URL="https://svenshi.github.io/oxidns-openwrt-packages/manifest.json"
+DEFAULT_CORE_REPOSITORY="svenshi/oxidns"
+DEFAULT_CORE_BUNDLE="full"
+GITHUB_API_BASE="https://api.github.com"
 TMP_ROOT="${TMPDIR:-/tmp}"
 
 CONFIG_PATH="$DEFAULT_CONFIG_PATH"
 WORKING_DIR="$DEFAULT_WORKING_DIR"
 SERVICE_NAME="$DEFAULT_SERVICE_NAME"
-API_BASE_URL="$DEFAULT_API_BASE_URL"
-MANIFEST_URL="$DEFAULT_MANIFEST_URL"
+CORE_REPOSITORY="$DEFAULT_CORE_REPOSITORY"
+CORE_BUNDLE="$DEFAULT_CORE_BUNDLE"
 DOWNLOAD_PROXY=""
 GITHUB_TOKEN=""
 
@@ -76,82 +78,17 @@ uci_get() {
 }
 
 load_settings() {
-	SERVICE_NAME="$(uci_get service_name "$DEFAULT_SERVICE_NAME")"
+	SERVICE_NAME="$DEFAULT_SERVICE_NAME"
 	CONFIG_PATH="$(uci_get config_path "$DEFAULT_CONFIG_PATH")"
 	WORKING_DIR="$(uci_get working_dir "$DEFAULT_WORKING_DIR")"
-	API_BASE_URL="$(uci_get api_base_url "$DEFAULT_API_BASE_URL")"
-	MANIFEST_URL="$(uci_get manifest_url "$DEFAULT_MANIFEST_URL")"
+	CORE_REPOSITORY="$(uci_get core_repository "$DEFAULT_CORE_REPOSITORY")"
+	CORE_BUNDLE="$(uci_get core_bundle "$DEFAULT_CORE_BUNDLE")"
 	DOWNLOAD_PROXY="$(uci_get download_proxy '')"
 	GITHUB_TOKEN="$(uci_get github_token '')"
 }
 
 init_script() {
 	printf '/etc/init.d/%s' "$SERVICE_NAME"
-}
-
-detect_package_manager() {
-	if command -v apk >/dev/null 2>&1; then
-		printf 'apk'
-	elif command -v opkg >/dev/null 2>&1; then
-		printf 'opkg'
-	else
-		printf 'none'
-	fi
-}
-
-package_format() {
-	case "$1" in
-		apk) printf 'apk' ;;
-		opkg) printf 'ipk' ;;
-		*) printf 'none' ;;
-	esac
-}
-
-package_arch() {
-	PM="$1"
-	case "$PM" in
-		apk)
-			apk --print-arch 2>/dev/null || printf 'unknown'
-			;;
-		opkg)
-			opkg print-architecture 2>/dev/null |
-				awk '$1 == "arch" { arch = $2 } END { if (arch) print arch; else print "unknown" }'
-			;;
-		*)
-			printf 'unknown'
-			;;
-	esac
-}
-
-package_installed() {
-	PM="$1"
-	case "$PM" in
-		apk)
-			apk info -e oxidns >/dev/null 2>&1
-			;;
-		opkg)
-			opkg status oxidns 2>/dev/null | grep -q '^Status: .* installed'
-			;;
-		*)
-			return 1
-			;;
-	esac
-}
-
-package_version() {
-	PM="$1"
-	case "$PM" in
-		apk)
-			apk info -v oxidns 2>/dev/null | sed -n '1s/^oxidns-//p'
-			;;
-		opkg)
-			opkg status oxidns 2>/dev/null | sed -n 's/^Version: //p' | sed -n '1p'
-			;;
-	esac
-}
-
-package_version_key() {
-	printf '%s' "$1" | sed 's/^v//; s/-r[0-9][0-9]*$//'
 }
 
 service_enabled() {
@@ -170,32 +107,83 @@ service_running() {
 	return 1
 }
 
-api_fetch() {
-	PATH_PART="$1"
-	URL="${API_BASE_URL%/}/$PATH_PART"
-	if command -v uclient-fetch >/dev/null 2>&1; then
-		uclient-fetch -q -T 2 -O - "$URL" 2>/dev/null
-	elif command -v wget >/dev/null 2>&1; then
-		wget -q -T 2 -O - "$URL" 2>/dev/null
-	elif command -v curl >/dev/null 2>&1; then
-		curl -fsS --max-time 2 "$URL" 2>/dev/null
-	else
-		return 1
-	fi
+yaml_scalar_clean() {
+	sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//; s/^'\''//; s/'\''$//'
 }
 
-api_post_empty() {
-	PATH_PART="$1"
-	URL="${API_BASE_URL%/}/$PATH_PART"
-	if command -v uclient-fetch >/dev/null 2>&1; then
-		uclient-fetch -q -T 5 --post-data '' -O - "$URL" 2>/dev/null
-	elif command -v wget >/dev/null 2>&1; then
-		wget -q -T 5 --post-data '' -O - "$URL" 2>/dev/null
-	elif command -v curl >/dev/null 2>&1; then
-		curl -fsS --max-time 5 -X POST "$URL" 2>/dev/null
-	else
-		return 1
-	fi
+config_api_listen() {
+	[ -r "$CONFIG_PATH" ] || return 1
+	awk '
+		/^[^[:space:]#][^:]*:/ {
+			top = $0;
+			sub(/:.*/, "", top);
+			second = "";
+		}
+		top == "api" && /^[[:space:]]+http:[[:space:]]*[^[:space:]#]/ {
+			sub(/^[[:space:]]+http:[[:space:]]*/, "", $0);
+			print $0;
+			exit;
+		}
+		top == "api" && /^[[:space:]]+http:[[:space:]]*$/ {
+			second = "http";
+			next;
+		}
+		top == "api" && second == "http" && /^[[:space:]]+listen:[[:space:]]*/ {
+			sub(/^[[:space:]]+listen:[[:space:]]*/, "", $0);
+			print $0;
+			exit;
+		}
+	' "$CONFIG_PATH" | yaml_scalar_clean
+}
+
+webui_url_from_config() {
+	LISTEN="$(config_api_listen || true)"
+	[ -n "$LISTEN" ] || return 1
+	LISTEN="${LISTEN#http://}"
+	LISTEN="${LISTEN#https://}"
+	case "$LISTEN" in
+		*:*) ;;
+		*) return 1 ;;
+	esac
+	HOST="${LISTEN%:*}"
+	PORT="${LISTEN##*:}"
+	case "$HOST" in
+		''|'0.0.0.0'|'::'|'[::]')
+			HOST="127.0.0.1"
+			;;
+	esac
+	[ -n "$PORT" ] || return 1
+	printf 'http://%s:%s/' "$HOST" "$PORT"
+}
+
+listen_host_from_config() {
+	LISTEN="$(config_api_listen || true)"
+	[ -n "$LISTEN" ] || return 1
+	LISTEN="${LISTEN#http://}"
+	LISTEN="${LISTEN#https://}"
+	case "$LISTEN" in
+		*:*) ;;
+		*) return 1 ;;
+	esac
+	printf '%s' "${LISTEN%:*}"
+}
+
+is_loopback_host() {
+	case "$1" in
+		localhost|127.*|'::1'|'[::1]')
+			return 0
+			;;
+	esac
+	return 1
+}
+
+is_wildcard_host() {
+	case "$1" in
+		''|'0.0.0.0'|'::'|'[::]')
+			return 0
+			;;
+	esac
+	return 1
 }
 
 build_info_json() {
@@ -204,67 +192,83 @@ build_info_json() {
 	fi
 }
 
-emit_package_manager() {
-	PM="$(detect_package_manager)"
-	FORMAT="$(package_format "$PM")"
-	ARCH="$(package_arch "$PM")"
-	printf '{'
-	printf '"ok":true,'
-	printf '"manager":'
-	json_string "$PM"
-	printf ',"format":'
-	json_string "$FORMAT"
-	printf ',"arch":'
-	json_string "$ARCH"
-	printf '}\n'
+json_value_from_string() {
+	KEY="$1"
+	JSON="$2"
+	if command -v jsonfilter >/dev/null 2>&1; then
+		printf '%s' "$JSON" | jsonfilter -e "@.$KEY" 2>/dev/null || true
+	else
+		printf '%s' "$JSON" | sed -n "s/.*\"$KEY\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | sed -n '1p'
+	fi
+}
+
+detect_rust_target() {
+	ARCH="$(uname -m 2>/dev/null || printf unknown)"
+	case "$ARCH" in
+		x86_64|amd64)
+			printf 'x86_64-unknown-linux-musl'
+			;;
+		aarch64|arm64)
+			printf 'aarch64-unknown-linux-musl'
+			;;
+		i386|i686)
+			printf 'i686-unknown-linux-musl'
+			;;
+		armv7l|armv7)
+			printf 'armv7-unknown-linux-musleabihf'
+			;;
+		armv6l|armv6)
+			printf 'arm-unknown-linux-musleabihf'
+			;;
+		*)
+			return 1
+			;;
+	esac
 }
 
 emit_status() {
 	load_settings
-	PM="$(detect_package_manager)"
-	FORMAT="$(package_format "$PM")"
-	ARCH="$(package_arch "$PM")"
-	INSTALLED=0
 	ENABLED=0
 	RUNNING=0
-	API_OK=0
-	PKG_VERSION="$(package_version "$PM" || true)"
+	CORE_INSTALLED=0
+	WEBUI_INSTALLED=0
+	WEBUI_LOCAL_ONLY=0
+	WEBUI_WILDCARD=0
 	BUILD_JSON="$(build_info_json)"
+	CORE_VERSION="$(json_value_from_string version "$BUILD_JSON")"
+	CORE_BUNDLE_VALUE="$(json_value_from_string bundle "$BUILD_JSON")"
+	CORE_TARGET="$(detect_rust_target 2>/dev/null || printf unknown)"
+	WEBUI_URL="$(webui_url_from_config 2>/dev/null || true)"
+	WEBUI_LISTEN="$(config_api_listen 2>/dev/null || true)"
+	WEBUI_HOST="$(listen_host_from_config 2>/dev/null || true)"
 
-	if package_installed "$PM"; then INSTALLED=1; fi
+	if [ -x "$OXIDNS_BIN" ]; then CORE_INSTALLED=1; fi
+	if [ -d "$WEBUI_DIR" ]; then WEBUI_INSTALLED=1; fi
+	if is_loopback_host "$WEBUI_HOST"; then WEBUI_LOCAL_ONLY=1; fi
+	if is_wildcard_host "$WEBUI_HOST"; then WEBUI_WILDCARD=1; fi
 	if service_enabled; then ENABLED=1; fi
 	if service_running; then RUNNING=1; fi
-	if api_fetch readyz >/dev/null 2>&1; then API_OK=1; fi
 
 	printf '{'
 	printf '"ok":true,'
 	printf '"backend":"rpcd",'
-	printf '"install_mode":'
-	json_string "$(uci_get install_mode package)"
+	printf '"core":{"installed":'
+	json_bool "$CORE_INSTALLED"
+	printf ',"version":'
+	json_string "$CORE_VERSION"
+	printf ',"bundle":'
+	json_string "$CORE_BUNDLE_VALUE"
+	printf ',"target":'
+	json_string "$CORE_TARGET"
 	printf ',"binary_path":'
 	json_string "$OXIDNS_BIN"
-	printf ',"binary_present":'
-	json_bool "$([ -x "$OXIDNS_BIN" ] && printf 1 || printf 0)"
+	printf '}'
 	printf ',"service":'
 	json_string "$SERVICE_NAME"
 	printf ',"config_path":'
 	json_string "$CONFIG_PATH"
 	printf ',"working_dir":'
 	json_string "$WORKING_DIR"
-	printf ',"api_base_url":'
-	json_string "$API_BASE_URL"
-	printf ',"package_manager":{"manager":'
-	json_string "$PM"
-	printf ',"format":'
-	json_string "$FORMAT"
-	printf ',"arch":'
-	json_string "$ARCH"
-	printf '}'
-	printf ',"package":{"installed":'
-	json_bool "$INSTALLED"
-	printf ',"version":'
-	json_string "$PKG_VERSION"
-	printf '}'
 	printf ',"service_status":{"running":'
 	json_bool "$RUNNING"
 	printf ',"enabled":'
@@ -272,8 +276,18 @@ emit_status() {
 	printf ',"init_script":'
 	json_string "$(init_script)"
 	printf '}'
-	printf ',"api":{"ready":'
-	json_bool "$API_OK"
+	printf ',"webui":{"installed":'
+	json_bool "$WEBUI_INSTALLED"
+	printf ',"url":'
+	json_string "$WEBUI_URL"
+	printf ',"listen":'
+	json_string "$WEBUI_LISTEN"
+	printf ',"local_only":'
+	json_bool "$WEBUI_LOCAL_ONLY"
+	printf ',"wildcard":'
+	json_bool "$WEBUI_WILDCARD"
+	printf ',"path":'
+	json_string "$WEBUI_DIR"
 	printf '}'
 	printf ',"build":'
 	if printf '%s' "$BUILD_JSON" | grep -q '^{'; then
@@ -324,67 +338,6 @@ emit_config_read() {
 	printf '}\n'
 }
 
-yaml_scalar_clean() {
-	sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//; s/^'\''//; s/'\''$//'
-}
-
-basic_log_level() {
-	awk '
-		/^[^[:space:]#][^:]*:/ {
-			top = $0;
-			sub(/:.*/, "", top);
-		}
-		top == "log" && /^[[:space:]]+level:[[:space:]]*/ {
-			sub(/^[[:space:]]+level:[[:space:]]*/, "", $0);
-			print $0;
-			exit;
-		}
-	' "$CONFIG_PATH" | yaml_scalar_clean
-}
-
-basic_api_listen() {
-	awk '
-		/^[^[:space:]#][^:]*:/ {
-			top = $0;
-			sub(/:.*/, "", top);
-			second = "";
-		}
-		top == "api" && /^[[:space:]]+http:[[:space:]]*[^[:space:]#]/ {
-			sub(/^[[:space:]]+http:[[:space:]]*/, "", $0);
-			print $0;
-			exit;
-		}
-		top == "api" && /^[[:space:]]+http:[[:space:]]*$/ {
-			second = "http";
-			next;
-		}
-		top == "api" && second == "http" && /^[[:space:]]+listen:[[:space:]]*/ {
-			sub(/^[[:space:]]+listen:[[:space:]]*/, "", $0);
-			print $0;
-			exit;
-		}
-	' "$CONFIG_PATH" | yaml_scalar_clean
-}
-
-emit_config_basic_read() {
-	load_settings
-	if [ ! -r "$CONFIG_PATH" ]; then
-		json_error "config_not_found" "configuration file not found"
-		return 1
-	fi
-	printf '{'
-	printf '"ok":true,'
-	printf '"path":'
-	json_string "$CONFIG_PATH"
-	printf ',"mtime":'
-	json_string "$(stat_mtime "$CONFIG_PATH")"
-	printf ',"log_level":'
-	json_string "$(basic_log_level)"
-	printf ',"api_http_listen":'
-	json_string "$(basic_api_listen)"
-	printf '}\n'
-}
-
 safe_single_line_value() {
 	printf '%s' "$1" | grep -q '[\r\n]' && return 1
 	return 0
@@ -403,19 +356,13 @@ emit_settings_read() {
 	if [ -n "$GITHUB_TOKEN" ]; then TOKEN_SET=1; fi
 	printf '{'
 	printf '"ok":true,'
-	json_field_string install_mode "$(uci_get install_mode package)"
+	json_field_string core_repository "$CORE_REPOSITORY"
 	printf ','
-	json_field_string service_name "$SERVICE_NAME"
+	json_field_string core_bundle "$CORE_BUNDLE"
 	printf ','
 	json_field_string config_path "$CONFIG_PATH"
 	printf ','
 	json_field_string working_dir "$WORKING_DIR"
-	printf ','
-	json_field_string api_base_url "$API_BASE_URL"
-	printf ','
-	json_field_string package_feed_url "$(uci_get package_feed_url 'https://svenshi.github.io/oxidns-openwrt-packages')"
-	printf ','
-	json_field_string manifest_url "$MANIFEST_URL"
 	printf ','
 	json_field_string download_proxy "$DOWNLOAD_PROXY"
 	printf ',"github_token_set":'
@@ -440,32 +387,51 @@ emit_settings_save() {
 		return 1
 	fi
 
-	INSTALL_MODE="$(settings_value install_mode "$INPUT")"
-	SERVICE_VALUE="$(settings_value service_name "$INPUT")"
-	CONFIG_VALUE="$(settings_value config_path "$INPUT")"
-	WORKING_VALUE="$(settings_value working_dir "$INPUT")"
-	API_VALUE="$(settings_value api_base_url "$INPUT")"
-	FEED_VALUE="$(settings_value package_feed_url "$INPUT")"
-	MANIFEST_VALUE="$(settings_value manifest_url "$INPUT")"
-	PROXY_VALUE="$(settings_value download_proxy "$INPUT")"
+	if ! REPOSITORY_VALUE="$(settings_value core_repository "$INPUT")" ||
+		! BUNDLE_VALUE="$(settings_value core_bundle "$INPUT")" ||
+		! CONFIG_VALUE="$(settings_value config_path "$INPUT")" ||
+		! WORKING_VALUE="$(settings_value working_dir "$INPUT")" ||
+		! PROXY_VALUE="$(settings_value download_proxy "$INPUT")"; then
+		json_error "invalid_settings" "settings values must be single-line strings"
+		return 1
+	fi
 
-	case "$INSTALL_MODE" in
-		package|binary) ;;
+	[ -n "$REPOSITORY_VALUE" ] || REPOSITORY_VALUE="$DEFAULT_CORE_REPOSITORY"
+	[ -n "$BUNDLE_VALUE" ] || BUNDLE_VALUE="$DEFAULT_CORE_BUNDLE"
+	[ -n "$CONFIG_VALUE" ] || CONFIG_VALUE="$DEFAULT_CONFIG_PATH"
+	[ -n "$WORKING_VALUE" ] || WORKING_VALUE="$DEFAULT_WORKING_DIR"
+
+	case "$REPOSITORY_VALUE" in
+		*/*) ;;
 		*)
-			json_error "invalid_install_mode" "install_mode must be package or binary"
+			json_error "invalid_core_repository" "core_repository must use owner/repo format"
+			return 1
+			;;
+	esac
+	if printf '%s' "$REPOSITORY_VALUE" | grep -q '[^A-Za-z0-9_.\/-]'; then
+		json_error "invalid_core_repository" "core_repository contains unsupported characters"
+		return 1
+	fi
+
+	case "$BUNDLE_VALUE" in
+		full|standard|minimal) ;;
+		*)
+			json_error "invalid_core_bundle" "core_bundle must be one of full, standard, minimal"
 			return 1
 			;;
 	esac
 
 	uci -q set oxidns.main=settings
-	uci -q set "oxidns.main.install_mode=$INSTALL_MODE"
-	uci -q set "oxidns.main.service_name=$SERVICE_VALUE"
+	uci -q set "oxidns.main.core_repository=$REPOSITORY_VALUE"
+	uci -q set "oxidns.main.core_bundle=$BUNDLE_VALUE"
 	uci -q set "oxidns.main.config_path=$CONFIG_VALUE"
 	uci -q set "oxidns.main.working_dir=$WORKING_VALUE"
-	uci -q set "oxidns.main.api_base_url=$API_VALUE"
-	uci -q set "oxidns.main.package_feed_url=$FEED_VALUE"
-	uci -q set "oxidns.main.manifest_url=$MANIFEST_VALUE"
 	uci -q set "oxidns.main.download_proxy=$PROXY_VALUE"
+	uci -q delete oxidns.main.api_base_url >/dev/null 2>&1 || true
+	uci -q delete oxidns.main.install_mode >/dev/null 2>&1 || true
+	uci -q delete oxidns.main.service_name >/dev/null 2>&1 || true
+	uci -q delete oxidns.main.package_feed_url >/dev/null 2>&1 || true
+	uci -q delete oxidns.main.manifest_url >/dev/null 2>&1 || true
 
 	NEW_TOKEN="$(input_value github_token "$INPUT")"
 	if [ -n "$NEW_TOKEN" ]; then
@@ -482,53 +448,6 @@ emit_settings_save() {
 		json_error "settings_save_failed" "failed to commit oxidns settings"
 		return 1
 	fi
-}
-
-write_basic_config_temp() {
-	SOURCE_FILE="$1"
-	OUT_FILE="$2"
-	LOG_LEVEL="$3"
-	API_LISTEN="$4"
-	awk -v log_level="$LOG_LEVEL" -v api_listen="$API_LISTEN" '
-		BEGIN {
-			log_done = 0;
-			api_done = 0;
-			top = "";
-			second = "";
-		}
-		/^[^[:space:]#][^:]*:/ {
-			top = $0;
-			sub(/:.*/, "", top);
-			second = "";
-		}
-		top == "log" && /^[[:space:]]+level:[[:space:]]*/ {
-			print "  level: " log_level;
-			log_done = 1;
-			next;
-		}
-		top == "api" && /^[[:space:]]+http:[[:space:]]*[^[:space:]#]/ {
-			print "  http:";
-			print "    listen: \"" api_listen "\"";
-			api_done = 1;
-			second = "http";
-			next;
-		}
-		top == "api" && /^[[:space:]]+http:[[:space:]]*$/ {
-			second = "http";
-			print;
-			next;
-		}
-		top == "api" && second == "http" && /^[[:space:]]+listen:[[:space:]]*/ {
-			print "    listen: \"" api_listen "\"";
-			api_done = 1;
-			next;
-		}
-		{ print }
-		END {
-			if (!log_done || !api_done)
-				exit 42;
-		}
-	' "$SOURCE_FILE" > "$OUT_FILE"
 }
 
 input_value() {
@@ -582,7 +501,8 @@ emit_config_save() {
 	INPUT="$(cat)"
 	CONTENT="$(input_value content "$INPUT")"
 	BASE_MTIME="$(input_value base_mtime "$INPUT")"
-	RELOAD="$(input_value reload "$INPUT")"
+	RESTART="$(input_value restart "$INPUT")"
+	[ -n "$RESTART" ] || RESTART="$(input_value reload "$INPUT")"
 
 	if [ -z "$CONTENT" ]; then
 		json_error "missing_content" "configuration content is required"
@@ -608,84 +528,80 @@ emit_config_save() {
 	fi
 	mv "$TMP_FILE" "$CONFIG_PATH"
 
-	RELOAD_STATUS="not_requested"
-	if [ "$RELOAD" = "true" ] || [ "$RELOAD" = "1" ]; then
-		if api_post_empty reload >/dev/null 2>&1; then
-			RELOAD_STATUS="requested"
-		else
-			RELOAD_STATUS="failed"
+	RESTART_STATUS="not_requested"
+	MESSAGE="configuration saved"
+	if [ "$RESTART" = "true" ] || [ "$RESTART" = "1" ]; then
+		INIT="$(init_script)"
+		SERVICE_OUT="$(mktemp "$TMP_ROOT/oxidns-service.XXXXXX")"
+		if [ ! -x "$INIT" ]; then
+			rm -f "$SERVICE_OUT"
+			json_error "service_unavailable" "configuration saved, but init script was not found"
+			return 1
 		fi
+		if "$INIT" restart >"$SERVICE_OUT" 2>&1; then
+			RESTART_STATUS="requested"
+			MESSAGE="configuration saved and service restarted"
+		else
+			MSG="$(cat "$SERVICE_OUT" 2>/dev/null || true)"
+			rm -f "$SERVICE_OUT"
+			json_error "service_restart_failed" "configuration saved, but service restart failed: ${MSG:-service restart failed}"
+			return 1
+		fi
+		rm -f "$SERVICE_OUT"
 	fi
 
 	printf '{"ok":true,"path":'
 	json_string "$CONFIG_PATH"
 	printf ',"mtime":'
 	json_string "$(stat_mtime "$CONFIG_PATH")"
-	printf ',"reload":'
-	json_string "$RELOAD_STATUS"
+	printf ',"restart":'
+	json_string "$RESTART_STATUS"
+	printf ',"message":'
+	json_string "$MESSAGE"
 	printf '}\n'
 }
 
-emit_config_basic_save() {
-	load_settings
-	INPUT="$(cat)"
-	LOG_LEVEL="$(input_value log_level "$INPUT")"
-	API_LISTEN="$(input_value api_http_listen "$INPUT")"
-	BASE_MTIME="$(input_value base_mtime "$INPUT")"
-	RELOAD="$(input_value reload "$INPUT")"
+emit_log_lines_json() {
+	SOURCE="$1"
+	FILE="$2"
+	printf '{"ok":true,"source":'
+	json_string "$SOURCE"
+	printf ',"lines":['
+	SEP=""
+	while IFS= read -r LINE; do
+		printf '%s' "$SEP"
+		json_string "$LINE"
+		SEP=","
+	done < "$FILE"
+	printf ']}\n'
+}
 
-	case "$LOG_LEVEL" in
-		off|trace|debug|info|warn|error) ;;
-		*)
-			json_error "invalid_log_level" "log_level must be one of off, trace, debug, info, warn, error"
-			return 1
-			;;
-	esac
-	if [ -z "$API_LISTEN" ] || ! safe_single_line_value "$API_LISTEN"; then
-		json_error "invalid_api_listen" "api_http_listen must be a single-line value"
+read_logread_logs() {
+	LIMIT="$1"
+	OUT_FILE="$2"
+	SCAN_LIMIT="$((LIMIT * 4))"
+	: > "$OUT_FILE"
+	if ! command -v logread >/dev/null 2>&1; then
 		return 1
 	fi
-	if [ ! -r "$CONFIG_PATH" ]; then
-		json_error "config_not_found" "configuration file not found"
-		return 1
-	fi
-	if [ -n "$BASE_MTIME" ] && [ "$BASE_MTIME" != "$(stat_mtime "$CONFIG_PATH")" ]; then
-		json_error "config_conflict" "configuration file changed since it was loaded"
-		return 1
+	if [ "$SCAN_LIMIT" -lt 100 ]; then
+		SCAN_LIMIT=100
+	elif [ "$SCAN_LIMIT" -gt 2000 ]; then
+		SCAN_LIMIT=2000
 	fi
 
-	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-basic.XXXXXX")"
-	if ! write_basic_config_temp "$CONFIG_PATH" "$TMP_FILE" "$LOG_LEVEL" "$API_LISTEN"; then
-		rm -f "$TMP_FILE"
-		json_error "unsupported_basic_config" "top-level log.level and api.http.listen must already exist to use basic save"
-		return 1
-	fi
-	if ! OUTPUT="$(validate_config_file "$TMP_FILE")"; then
-		rm -f "$TMP_FILE"
-		json_error "config_invalid" "$OUTPUT"
-		return 1
-	fi
-
-	mkdir -p "$WORKING_DIR/config-backups"
-	cp "$CONFIG_PATH" "$WORKING_DIR/config-backups/config.yaml.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
-	mv "$TMP_FILE" "$CONFIG_PATH"
-
-	RELOAD_STATUS="not_requested"
-	if [ "$RELOAD" = "true" ] || [ "$RELOAD" = "1" ]; then
-		if api_post_empty reload >/dev/null 2>&1; then
-			RELOAD_STATUS="requested"
-		else
-			RELOAD_STATUS="failed"
-		fi
-	fi
-
-	printf '{"ok":true,"path":'
-	json_string "$CONFIG_PATH"
-	printf ',"mtime":'
-	json_string "$(stat_mtime "$CONFIG_PATH")"
-	printf ',"reload":'
-	json_string "$RELOAD_STATUS"
-	printf '}\n'
+	logread -l "$SCAN_LIMIT" -e oxidns 2>/dev/null | awk '
+		BEGIN {
+			esc = sprintf("%c", 27);
+			csi = esc "\\[[0-9;?]*[ -/]*[@-~]";
+		}
+		/oxidns\[[0-9]+\]:/ {
+			gsub(csi, "");
+			gsub(/\r/, "");
+			sub(/^.* oxidns\[[0-9]+\]:[[:space:]]*/, "");
+			print;
+		}
+	' | tail -n "$LIMIT" > "$OUT_FILE" || true
 }
 
 emit_logs_recent() {
@@ -696,316 +612,641 @@ emit_logs_recent() {
 		*[!0-9]*|'') LIMIT=200 ;;
 	esac
 	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-logs.XXXXXX")"
-	if API_LOGS="$(api_fetch "logs?limit=$LIMIT")" && load_jshn; then
-		if json_load "$API_LOGS" >/dev/null 2>&1 && json_select entries >/dev/null 2>&1; then
-			json_get_keys LOG_KEYS
-			: > "$TMP_FILE"
-			for LOG_KEY in $LOG_KEYS; do
-				json_select "$LOG_KEY" >/dev/null 2>&1 || continue
-				json_get_var LOG_TS timestamp
-				json_get_var LOG_LEVEL level
-				json_get_var LOG_TARGET target
-				json_get_var LOG_MESSAGE message
-				json_select .. >/dev/null 2>&1 || true
-				printf '%s [%s] %s %s\n' "$LOG_TS" "$LOG_LEVEL" "$LOG_TARGET" "$LOG_MESSAGE" >> "$TMP_FILE"
-			done
-			printf '{"ok":true,"source":"api","lines":['
-			SEP=""
-			while IFS= read -r LINE; do
-				printf '%s' "$SEP"
-				json_string "$LINE"
-				SEP=","
-			done < "$TMP_FILE"
-			printf ']}\n'
-			rm -f "$TMP_FILE"
-			return 0
-		fi
-	fi
-	if command -v logread >/dev/null 2>&1; then
-		logread 2>/dev/null | grep -i 'oxidns' | tail -n "$LIMIT" > "$TMP_FILE" || true
-	else
-		: > "$TMP_FILE"
-	fi
-	printf '{"ok":true,"source":"logread","lines":['
-	SEP=""
-	while IFS= read -r LINE; do
-		printf '%s' "$SEP"
-		json_string "$LINE"
-		SEP=","
-	done < "$TMP_FILE"
-	printf ']}\n'
+	read_logread_logs "$LIMIT" "$TMP_FILE" || true
+	emit_log_lines_json "logread" "$TMP_FILE"
 	rm -f "$TMP_FILE"
 }
 
 download_file() {
 	URL="$1"
 	OUT="$2"
-	if command -v uclient-fetch >/dev/null 2>&1; then
-		uclient-fetch -q -O "$OUT" "$URL"
-	elif command -v wget >/dev/null 2>&1; then
-		wget -q -O "$OUT" "$URL"
-	elif command -v curl >/dev/null 2>&1; then
+	if command -v curl >/dev/null 2>&1; then
 		if [ -n "$DOWNLOAD_PROXY" ]; then
-			curl -fsSL --proxy "$DOWNLOAD_PROXY" -o "$OUT" "$URL"
+			if [ -n "$GITHUB_TOKEN" ]; then
+				curl -fsSL --proxy "$DOWNLOAD_PROXY" -H "User-Agent: luci-app-oxidns" -H "Authorization: Bearer $GITHUB_TOKEN" -o "$OUT" "$URL"
+			else
+				curl -fsSL --proxy "$DOWNLOAD_PROXY" -H "User-Agent: luci-app-oxidns" -o "$OUT" "$URL"
+			fi
+		elif [ -n "$GITHUB_TOKEN" ]; then
+			curl -fsSL -H "User-Agent: luci-app-oxidns" -H "Authorization: Bearer $GITHUB_TOKEN" -o "$OUT" "$URL"
 		else
-			curl -fsSL -o "$OUT" "$URL"
+			curl -fsSL -H "User-Agent: luci-app-oxidns" -o "$OUT" "$URL"
+		fi
+	elif command -v uclient-fetch >/dev/null 2>&1; then
+		if [ -n "$GITHUB_TOKEN" ]; then
+			uclient-fetch -q -O "$OUT" --header="User-Agent: luci-app-oxidns" --header="Authorization: Bearer $GITHUB_TOKEN" "$URL"
+		else
+			uclient-fetch -q -O "$OUT" --header="User-Agent: luci-app-oxidns" "$URL"
+		fi
+	elif command -v wget >/dev/null 2>&1; then
+		if [ -n "$GITHUB_TOKEN" ]; then
+			wget -q --header="User-Agent: luci-app-oxidns" --header="Authorization: Bearer $GITHUB_TOKEN" -O "$OUT" "$URL"
+		else
+			wget -q --header="User-Agent: luci-app-oxidns" -O "$OUT" "$URL"
 		fi
 	else
 		return 1
 	fi
 }
 
+require_download_transport() {
+	if [ -n "$DOWNLOAD_PROXY" ] && ! command -v curl >/dev/null 2>&1; then
+		json_error "download_proxy_requires_curl" "download_proxy is configured, but curl is not installed; install curl or clear download_proxy"
+		return 1
+	fi
+	return 0
+}
+
+resolv_conf_path() {
+	if [ -e /tmp/resolv.conf ] || [ -L /tmp/resolv.conf ]; then
+		printf '/tmp/resolv.conf'
+	else
+		printf '/etc/resolv.conf'
+	fi
+}
+
+resolver_has_only_loopback() {
+	RESOLV_CONF="$(resolv_conf_path)"
+	[ -r "$RESOLV_CONF" ] || return 0
+	awk '
+		$1 == "nameserver" {
+			total++;
+			if ($2 !~ /^(127\.|::1$|0\.0\.0\.0$)/)
+				non_loopback++;
+		}
+		END {
+			exit (total == 0 || non_loopback == 0) ? 0 : 1;
+		}
+	' "$RESOLV_CONF"
+}
+
+collect_bootstrap_nameservers() {
+	RESOLV_CONF="$(resolv_conf_path)"
+	for RESOLV_SOURCE in /tmp/resolv.conf.d/resolv.conf.auto "$RESOLV_CONF"; do
+		[ -r "$RESOLV_SOURCE" ] || continue
+		awk '$1 == "nameserver" && $2 !~ /^(127\.|::1$|0\.0\.0\.0$)/ { print "nameserver " $2 }' "$RESOLV_SOURCE"
+	done | awk '!seen[$0]++'
+}
+
+restore_bootstrap_resolver() {
+	if [ "${BOOTSTRAP_RESOLVER_ACTIVE:-0}" != "1" ]; then
+		return 0
+	fi
+	if [ -n "${BOOTSTRAP_RESOLVER_BACKUP:-}" ] && [ -f "$BOOTSTRAP_RESOLVER_BACKUP" ]; then
+		cp "$BOOTSTRAP_RESOLVER_BACKUP" "$BOOTSTRAP_RESOLVER_CONF" 2>/dev/null || true
+		rm -f "$BOOTSTRAP_RESOLVER_BACKUP"
+	fi
+	BOOTSTRAP_RESOLVER_ACTIVE=0
+	trap - EXIT HUP INT TERM
+}
+
+begin_bootstrap_resolver() {
+	BOOTSTRAP_RESOLVER_CONF="$(resolv_conf_path)"
+	BOOTSTRAP_RESOLVER_BACKUP="$(mktemp "$TMP_ROOT/oxidns-resolv-backup.XXXXXX")"
+	BOOTSTRAP_NAMESERVERS="$(mktemp "$TMP_ROOT/oxidns-resolv-ns.XXXXXX")"
+	BOOTSTRAP_RESOLVER_NEXT="$(mktemp "$TMP_ROOT/oxidns-resolv-next.XXXXXX")"
+
+	if [ -r "$BOOTSTRAP_RESOLVER_CONF" ]; then
+		cp "$BOOTSTRAP_RESOLVER_CONF" "$BOOTSTRAP_RESOLVER_BACKUP"
+		awk '$1 == "search" || $1 == "domain" { print }' "$BOOTSTRAP_RESOLVER_CONF" > "$BOOTSTRAP_RESOLVER_NEXT"
+	else
+		: > "$BOOTSTRAP_RESOLVER_BACKUP"
+		: > "$BOOTSTRAP_RESOLVER_NEXT"
+	fi
+
+	collect_bootstrap_nameservers > "$BOOTSTRAP_NAMESERVERS"
+	if [ ! -s "$BOOTSTRAP_NAMESERVERS" ]; then
+		printf 'nameserver 223.5.5.5\nnameserver 1.1.1.1\n' > "$BOOTSTRAP_NAMESERVERS"
+	fi
+	cat "$BOOTSTRAP_NAMESERVERS" >> "$BOOTSTRAP_RESOLVER_NEXT"
+
+	if ! cp "$BOOTSTRAP_RESOLVER_NEXT" "$BOOTSTRAP_RESOLVER_CONF"; then
+		rm -f "$BOOTSTRAP_RESOLVER_BACKUP" "$BOOTSTRAP_NAMESERVERS" "$BOOTSTRAP_RESOLVER_NEXT"
+		return 1
+	fi
+
+	rm -f "$BOOTSTRAP_NAMESERVERS" "$BOOTSTRAP_RESOLVER_NEXT"
+	BOOTSTRAP_RESOLVER_ACTIVE=1
+	trap 'restore_bootstrap_resolver; exit 1' HUP INT TERM
+	trap 'restore_bootstrap_resolver' EXIT
+}
+
+download_file_with_resolver_fallback() {
+	URL="$1"
+	OUT="$2"
+
+	if download_file "$URL" "$OUT"; then
+		return 0
+	fi
+	if ! resolver_has_only_loopback; then
+		return 1
+	fi
+	if ! begin_bootstrap_resolver; then
+		return 1
+	fi
+	set +e
+	download_file "$URL" "$OUT"
+	DOWNLOAD_RC="$?"
+	set -e
+	restore_bootstrap_resolver
+	return "$DOWNLOAD_RC"
+}
+
 sha256_file() {
 	sha256sum "$1" 2>/dev/null | awk '{ print $1 }'
 }
 
-load_jshn() {
-	if [ -r /usr/share/libubox/jshn.sh ]; then
-		# shellcheck disable=SC1091
-		. /usr/share/libubox/jshn.sh
-		return 0
-	fi
-	return 1
+asset_name_for_bundle() {
+	BUNDLE="$1"
+	RUST_TARGET="$2"
+	case "$BUNDLE" in
+		full)
+			printf 'oxidns-%s.tar.gz' "$RUST_TARGET"
+			;;
+		standard|minimal)
+			printf 'oxidns-%s-%s.tar.gz' "$BUNDLE" "$RUST_TARGET"
+			;;
+		*)
+			return 1
+			;;
+	esac
 }
 
-select_manifest_package() {
-	MANIFEST_FILE="$1"
-	WANT_FORMAT="$2"
-	WANT_ARCH="$3"
+release_api_url() {
+	REPOSITORY="$1"
+	TARGET="$2"
+	if [ "$TARGET" = "latest" ]; then
+		printf '%s/repos/%s/releases/latest' "$GITHUB_API_BASE" "$REPOSITORY"
+	else
+		printf '%s/repos/%s/releases/tags/%s' "$GITHUB_API_BASE" "$REPOSITORY" "$TARGET"
+	fi
+}
 
-	SELECT_VERSION=""
-	SELECT_COMMIT=""
-	SELECT_BUNDLE=""
-	SELECT_FORMAT=""
-	SELECT_ARCH=""
-	SELECT_RUST_TARGET=""
-	SELECT_FILENAME=""
+version_tag() {
+	VERSION="$1"
+	case "$VERSION" in
+		v*) printf '%s' "$VERSION" ;;
+		*) printf 'v%s' "$VERSION" ;;
+	esac
+}
+
+select_release_asset() {
+	RELEASE_FILE="$1"
+	WANT_ASSET="$2"
+
+	SELECT_TAG=""
+	SELECT_ASSET_NAME=""
 	SELECT_URL=""
 	SELECT_SHA256=""
 	SELECT_SIZE=""
 
-	if ! load_jshn; then
+	if ! command -v jsonfilter >/dev/null 2>&1; then
 		return 2
 	fi
 
-	json_load "$(cat "$MANIFEST_FILE")" >/dev/null 2>&1 || return 1
-	json_select oxidns >/dev/null 2>&1 || return 1
-	json_get_var SELECT_VERSION version
-	json_get_var SELECT_COMMIT commit
-	json_get_var SELECT_BUNDLE bundle
-	json_select packages >/dev/null 2>&1 || return 1
-	json_get_keys PACKAGE_KEYS
+	SELECT_TAG="$(jsonfilter -i "$RELEASE_FILE" -e '@.tag_name' 2>/dev/null || true)"
+	[ -n "$SELECT_TAG" ] || return 1
 
-	for PACKAGE_KEY in $PACKAGE_KEYS; do
-		json_select "$PACKAGE_KEY" >/dev/null 2>&1 || continue
-		json_get_var PKG_FORMAT format
-		json_get_var PKG_ARCH openwrt_arch
-		json_get_var PKG_RUST_TARGET rust_target
-		json_get_var PKG_FILENAME filename
-		json_get_var PKG_URL url
-		json_get_var PKG_SHA256 sha256
-		json_get_var PKG_SIZE size
-		json_select .. >/dev/null 2>&1 || true
+	NAME_FILE="$(mktemp "$TMP_ROOT/oxidns-asset-name.XXXXXX")"
+	URL_FILE="$(mktemp "$TMP_ROOT/oxidns-asset-url.XXXXXX")"
+	DIGEST_FILE="$(mktemp "$TMP_ROOT/oxidns-asset-digest.XXXXXX")"
+	SIZE_FILE="$(mktemp "$TMP_ROOT/oxidns-asset-size.XXXXXX")"
+	SELECT_FILE="$(mktemp "$TMP_ROOT/oxidns-asset-selected.XXXXXX")"
 
-		if [ "$PKG_FORMAT" = "$WANT_FORMAT" ] && [ "$PKG_ARCH" = "$WANT_ARCH" ]; then
-			SELECT_FORMAT="$PKG_FORMAT"
-			SELECT_ARCH="$PKG_ARCH"
-			SELECT_RUST_TARGET="$PKG_RUST_TARGET"
-			SELECT_FILENAME="$PKG_FILENAME"
-			SELECT_URL="$PKG_URL"
-			SELECT_SHA256="$PKG_SHA256"
-			SELECT_SIZE="$PKG_SIZE"
-			return 0
-		fi
-	done
+	if ! jsonfilter -i "$RELEASE_FILE" -e '@.assets[*].name' > "$NAME_FILE" 2>/dev/null ||
+		! jsonfilter -i "$RELEASE_FILE" -e '@.assets[*].browser_download_url' > "$URL_FILE" 2>/dev/null ||
+		! jsonfilter -i "$RELEASE_FILE" -e '@.assets[*].digest' > "$DIGEST_FILE" 2>/dev/null ||
+		! jsonfilter -i "$RELEASE_FILE" -e '@.assets[*].size' > "$SIZE_FILE" 2>/dev/null; then
+		rm -f "$NAME_FILE" "$URL_FILE" "$DIGEST_FILE" "$SIZE_FILE" "$SELECT_FILE"
+		return 1
+	fi
 
+	if ! awk -v want="$WANT_ASSET" -v url_file="$URL_FILE" -v digest_file="$DIGEST_FILE" -v size_file="$SIZE_FILE" '
+		BEGIN {
+			while ((getline url < url_file) > 0)
+				urls[++url_count] = url;
+			while ((getline digest < digest_file) > 0)
+				digests[++digest_count] = digest;
+			while ((getline size < size_file) > 0)
+				sizes[++size_count] = size;
+		}
+		{
+			idx++;
+			if ($0 == want) {
+				print $0;
+				print urls[idx];
+				print digests[idx];
+				print sizes[idx];
+				found = 1;
+				exit;
+			}
+		}
+		END {
+			exit found ? 0 : 1;
+		}
+	' "$NAME_FILE" > "$SELECT_FILE"; then
+		rm -f "$NAME_FILE" "$URL_FILE" "$DIGEST_FILE" "$SIZE_FILE" "$SELECT_FILE"
+		return 1
+	fi
+
+	SELECT_ASSET_NAME="$(sed -n '1p' "$SELECT_FILE")"
+	SELECT_URL="$(sed -n '2p' "$SELECT_FILE")"
+	SELECT_SHA256="$(sed -n '3p' "$SELECT_FILE" | sed 's/^sha256://')"
+	SELECT_SIZE="$(sed -n '4p' "$SELECT_FILE")"
+	rm -f "$NAME_FILE" "$URL_FILE" "$DIGEST_FILE" "$SIZE_FILE" "$SELECT_FILE"
+	[ -n "$SELECT_ASSET_NAME" ] && [ -n "$SELECT_URL" ]
+}
+
+valid_sha256() {
+	printf '%s' "$1" | grep -Eq '^[0-9a-fA-F]{64}$'
+}
+
+write_openwrt_default_config() {
+	SOURCE_FILE="$1"
+	OUT_FILE="$2"
+	awk '
+		BEGIN {
+			top = "";
+			second = "";
+			third = "";
+			listen_done = 0;
+			root_done = 0;
+		}
+		/^[^[:space:]#][^:]*:/ {
+			top = $0;
+			sub(/:.*/, "", top);
+			second = "";
+			third = "";
+		}
+		top == "api" && /^[[:space:]][[:space:]]http:[[:space:]]*$/ {
+			second = "http";
+			third = "";
+			print;
+			next;
+		}
+		top == "api" && second == "http" && /^[[:space:]][[:space:]][[:space:]][[:space:]]webui:[[:space:]]*$/ {
+			third = "webui";
+			print;
+			next;
+		}
+		top == "api" && second == "http" && /^[[:space:]][[:space:]][[:space:]][[:space:]]listen:[[:space:]]*/ {
+			print "    listen: \"127.0.0.1:9199\"";
+			listen_done = 1;
+			next;
+		}
+		top == "api" && second == "http" && third == "webui" && /^[[:space:]][[:space:]][[:space:]][[:space:]][[:space:]][[:space:]]root:[[:space:]]*/ {
+			print "      root: \"/usr/share/oxidns/webui\"";
+			root_done = 1;
+			next;
+		}
+		{ print }
+		END {
+			if (!listen_done || !root_done)
+				exit 42;
+		}
+	' "$SOURCE_FILE" > "$OUT_FILE"
+}
+
+core_install_error() {
+	rm -rf "${CORE_TMP_DIR:-}" 2>/dev/null || true
+	json_error "$1" "$2"
 	return 1
 }
 
-download_manifest() {
-	URL="$1"
-	OUT="$2"
-	if ! download_file "$URL" "$OUT"; then
-		json_error "manifest_download_failed" "failed to download package manifest"
-		return 1
-	fi
-}
-
-emit_selected_package_json() {
-	printf '{'
-	printf '"format":'
-	json_string "$SELECT_FORMAT"
-	printf ',"openwrt_arch":'
-	json_string "$SELECT_ARCH"
-	printf ',"rust_target":'
-	json_string "$SELECT_RUST_TARGET"
-	printf ',"filename":'
-	json_string "$SELECT_FILENAME"
-	printf ',"url":'
-	json_string "$SELECT_URL"
-	printf ',"sha256":'
-	json_string "$SELECT_SHA256"
-	printf ',"size":'
-	json_string "$SELECT_SIZE"
-	printf '}'
-}
-
-emit_package_check_update() {
-	load_settings
-	INPUT="$(cat)"
-	URL="$(input_value manifest_url "$INPUT")"
-	[ -n "$URL" ] || URL="$MANIFEST_URL"
-	PM="$(detect_package_manager)"
-	FORMAT="$(package_format "$PM")"
-	ARCH="$(package_arch "$PM")"
-	if [ "$PM" = "none" ]; then
-		json_error "package_manager_unavailable" "opkg or apk not found"
-		return 1
-	fi
-	TMP_FILE="$(mktemp "$TMP_ROOT/oxidns-manifest.XXXXXX")"
-	if ! download_manifest "$URL" "$TMP_FILE"; then
-		rm -f "$TMP_FILE"
-		return 1
-	fi
-
-	if ! select_manifest_package "$TMP_FILE" "$FORMAT" "$ARCH"; then
-		rm -f "$TMP_FILE"
-		if [ "$PM" = "none" ]; then
-			json_error "package_manager_unavailable" "opkg or apk not found"
-		else
-			json_error "package_not_found" "no package matches current package manager and architecture"
-		fi
-		return 1
-	fi
-	rm -f "$TMP_FILE"
-	CURRENT="$(package_version "$(detect_package_manager)" || true)"
-	UPDATE=0
-	if [ -n "$SELECT_VERSION" ] && [ "$(package_version_key "$SELECT_VERSION")" != "$(package_version_key "$CURRENT")" ]; then UPDATE=1; fi
-	printf '{"ok":true,"current_version":'
-	json_string "$CURRENT"
-	printf ',"latest_version":'
-	json_string "$SELECT_VERSION"
-	printf ',"update_available":'
-	json_bool "$UPDATE"
-	printf ',"package":'
-	emit_selected_package_json
-	printf '}\n'
-}
-
-emit_package_install() {
-	load_settings
-	INPUT="$(cat)"
+install_core_from_release() {
 	ACTION="$1"
-	PM="$(detect_package_manager)"
-	FORMAT="$(package_format "$PM")"
-	ARCH="$(package_arch "$PM")"
-	URL="$(input_value url "$INPUT")"
-	EXPECTED_SHA256="$(input_value sha256 "$INPUT")"
-	MANIFEST_INPUT_URL="$(input_value manifest_url "$INPUT")"
-	[ -n "$MANIFEST_INPUT_URL" ] || MANIFEST_INPUT_URL="$MANIFEST_URL"
+	RELEASE_TARGET="$2"
+	REQUEST_BUNDLE="$3"
+	load_settings
+	require_download_transport || return 1
 
-	if [ "$PM" = "none" ]; then
-		json_error "package_manager_unavailable" "opkg or apk not found"
-		return 1
-	fi
-
-	if [ -z "$URL" ] || [ -z "$EXPECTED_SHA256" ]; then
-		MANIFEST_FILE="$(mktemp "$TMP_ROOT/oxidns-manifest.XXXXXX")"
-		if ! download_manifest "$MANIFEST_INPUT_URL" "$MANIFEST_FILE"; then
-			rm -f "$MANIFEST_FILE"
+	case "$CORE_REPOSITORY" in
+		*/*) ;;
+		*)
+			json_error "invalid_core_repository" "core_repository must use owner/repo format"
 			return 1
-		fi
-		if ! select_manifest_package "$MANIFEST_FILE" "$FORMAT" "$ARCH"; then
-			rm -f "$MANIFEST_FILE"
-			json_error "package_not_found" "no package matches current package manager and architecture"
-			return 1
-		fi
-		rm -f "$MANIFEST_FILE"
-		URL="$SELECT_URL"
-		EXPECTED_SHA256="$SELECT_SHA256"
-	fi
-
-	PKG_FILE="$(mktemp "$TMP_ROOT/oxidns-package.XXXXXX")"
-	if ! download_file "$URL" "$PKG_FILE"; then
-		rm -f "$PKG_FILE"
-		json_error "package_download_failed" "failed to download package"
-		return 1
-	fi
-
-	ACTUAL_SHA256="$(sha256_file "$PKG_FILE")"
-	if [ -z "$ACTUAL_SHA256" ] || [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
-		rm -f "$PKG_FILE"
-		json_error "package_checksum_failed" "package SHA256 does not match manifest"
-		return 1
-	fi
-
-	case "$PM" in
-		opkg)
-			if opkg install "$PKG_FILE" >/tmp/luci-oxidns-package.out 2>&1; then
-				rm -f "$PKG_FILE"
-				printf '{"ok":true,"action":'
-				json_string "$ACTION"
-				printf '}\n'
-			else
-				MSG="$(cat /tmp/luci-oxidns-package.out 2>/dev/null || true)"
-				rm -f "$PKG_FILE"
-				json_error "package_install_failed" "${MSG:-opkg install failed}"
-				return 1
-			fi
-			;;
-		apk)
-			if apk add --allow-untrusted "$PKG_FILE" >/tmp/luci-oxidns-package.out 2>&1; then
-				rm -f "$PKG_FILE"
-				printf '{"ok":true,"action":'
-				json_string "$ACTION"
-				printf '}\n'
-			else
-				MSG="$(cat /tmp/luci-oxidns-package.out 2>/dev/null || true)"
-				rm -f "$PKG_FILE"
-				json_error "package_install_failed" "${MSG:-apk add failed}"
-				return 1
-			fi
 			;;
 	esac
+
+	if ! RUST_TARGET="$(detect_rust_target 2>/dev/null)"; then
+		json_error "unsupported_target" "current CPU architecture does not match a published OxiDNS Linux musl release"
+		return 1
+	fi
+	if ! ASSET_NAME="$(asset_name_for_bundle "$REQUEST_BUNDLE" "$RUST_TARGET")"; then
+		json_error "unsupported_core_bundle" "core bundle must be one of full, standard, minimal"
+		return 1
+	fi
+
+	CORE_TMP_DIR="$(mktemp -d "$TMP_ROOT/oxidns-core.XXXXXX")"
+	RELEASE_FILE="$CORE_TMP_DIR/release.json"
+	ARCHIVE_FILE="$CORE_TMP_DIR/$ASSET_NAME"
+	UNPACK_DIR="$CORE_TMP_DIR/unpack"
+	RELEASE_URL="$(release_api_url "$CORE_REPOSITORY" "$RELEASE_TARGET")"
+
+	if ! download_file_with_resolver_fallback "$RELEASE_URL" "$RELEASE_FILE"; then
+		core_install_error "release_fetch_failed" "failed to fetch OxiDNS release metadata"
+		return 1
+	fi
+	if ! select_release_asset "$RELEASE_FILE" "$ASSET_NAME"; then
+		core_install_error "release_asset_not_found" "selected OxiDNS release does not contain the required archive"
+		return 1
+	fi
+	if ! valid_sha256 "$SELECT_SHA256"; then
+		core_install_error "release_digest_missing" "selected OxiDNS release asset does not include a valid SHA256 digest"
+		return 1
+	fi
+	if ! download_file_with_resolver_fallback "$SELECT_URL" "$ARCHIVE_FILE"; then
+		core_install_error "core_download_failed" "failed to download OxiDNS core archive"
+		return 1
+	fi
+
+	ACTUAL_SHA256="$(sha256_file "$ARCHIVE_FILE" || true)"
+	if [ -z "$ACTUAL_SHA256" ] || [ "$ACTUAL_SHA256" != "$SELECT_SHA256" ]; then
+		core_install_error "core_checksum_failed" "OxiDNS core archive SHA256 does not match the release digest"
+		return 1
+	fi
+
+	mkdir -p "$UNPACK_DIR"
+	if ! tar -xzf "$ARCHIVE_FILE" -C "$UNPACK_DIR"; then
+		core_install_error "core_unpack_failed" "failed to unpack OxiDNS core archive"
+		return 1
+	fi
+	if [ ! -f "$UNPACK_DIR/oxidns" ]; then
+		core_install_error "core_archive_invalid" "OxiDNS core archive does not contain an oxidns binary"
+		return 1
+	fi
+
+	CONFIG_TMP=""
+	if [ ! -e "$CONFIG_PATH" ]; then
+		if [ ! -f "$UNPACK_DIR/config.yaml" ]; then
+			core_install_error "core_archive_invalid" "OxiDNS core archive does not contain config.yaml"
+			return 1
+		fi
+		CONFIG_TMP="$CORE_TMP_DIR/config.yaml.openwrt"
+		if ! write_openwrt_default_config "$UNPACK_DIR/config.yaml" "$CONFIG_TMP"; then
+			core_install_error "default_config_unsupported" "release config.yaml cannot be adapted for OpenWrt defaults"
+			return 1
+		fi
+	fi
+
+	mkdir -p "$(dirname "$OXIDNS_BIN")" "$WORKING_DIR"
+	cp "$UNPACK_DIR/oxidns" "$CORE_TMP_DIR/oxidns.new"
+	chmod 755 "$CORE_TMP_DIR/oxidns.new"
+	mv "$CORE_TMP_DIR/oxidns.new" "$OXIDNS_BIN"
+
+	if [ -d "$UNPACK_DIR/webui" ]; then
+		WEBUI_TMP="$CORE_TMP_DIR/webui.new"
+		rm -rf "$WEBUI_TMP"
+		mkdir -p "$(dirname "$WEBUI_DIR")" "$WEBUI_TMP"
+		cp -R "$UNPACK_DIR/webui/." "$WEBUI_TMP/"
+		rm -rf "$WEBUI_DIR"
+		mv "$WEBUI_TMP" "$WEBUI_DIR"
+	fi
+
+	if [ -n "$CONFIG_TMP" ]; then
+		mkdir -p "$(dirname "$CONFIG_PATH")"
+		mv "$CONFIG_TMP" "$CONFIG_PATH"
+	elif [ -f "$UNPACK_DIR/config.yaml" ]; then
+		cp "$UNPACK_DIR/config.yaml" "$WORKING_DIR/config.yaml.example" 2>/dev/null || true
+	fi
+
+	CONFIG_CHECK_OK=0
+	if CONFIG_CHECK_OUTPUT="$(validate_config_file "$CONFIG_PATH" 2>&1)"; then
+		CONFIG_CHECK_OK=1
+	else
+		CONFIG_CHECK_OUTPUT="${CONFIG_CHECK_OUTPUT:-configuration check failed}"
+	fi
+
+	rm -rf "$CORE_TMP_DIR"
+	printf '{"ok":true,"action":'
+	json_string "$ACTION"
+	printf ',"version":'
+	json_string "$SELECT_TAG"
+	printf ',"bundle":'
+	json_string "$REQUEST_BUNDLE"
+	printf ',"target":'
+	json_string "$RUST_TARGET"
+	printf ',"asset":'
+	json_string "$SELECT_ASSET_NAME"
+	printf ',"binary_path":'
+	json_string "$OXIDNS_BIN"
+	printf ',"webui_path":'
+	json_string "$WEBUI_DIR"
+	printf ',"config_check":{"ok":'
+	json_bool "$CONFIG_CHECK_OK"
+	printf ',"message":'
+	json_string "$CONFIG_CHECK_OUTPUT"
+	printf '}}\n'
 }
 
-emit_package_remove() {
+emit_core_install() {
 	load_settings
-	PM="$(detect_package_manager)"
-	run_service stop >/dev/null 2>&1 || true
-	case "$PM" in
-		opkg)
-			if opkg remove oxidns >/tmp/luci-oxidns-package.out 2>&1; then
-				printf '{"ok":true,"action":"remove"}\n'
-			else
-				json_error "package_remove_failed" "$(cat /tmp/luci-oxidns-package.out 2>/dev/null || true)"
-				return 1
-			fi
-			;;
-		apk)
-			if apk del oxidns >/tmp/luci-oxidns-package.out 2>&1; then
-				printf '{"ok":true,"action":"remove"}\n'
-			else
-				json_error "package_remove_failed" "$(cat /tmp/luci-oxidns-package.out 2>/dev/null || true)"
-				return 1
-			fi
-			;;
-		*)
-			json_error "package_manager_unavailable" "opkg or apk not found"
-			return 1
-			;;
+	if [ -x "$OXIDNS_BIN" ]; then
+		json_error "core_already_installed" "OxiDNS core is already installed; use repair reinstall instead"
+		return 1
+	fi
+	install_core_from_release install latest "$CORE_BUNDLE"
+}
+
+emit_core_reinstall() {
+	load_settings
+	BUILD_JSON="$(build_info_json)"
+	CURRENT_VERSION="$(json_value_from_string version "$BUILD_JSON")"
+	CURRENT_BUNDLE="$(json_value_from_string bundle "$BUILD_JSON")"
+	if [ ! -x "$OXIDNS_BIN" ] || [ -z "$CURRENT_VERSION" ]; then
+		json_error "core_not_installed" "OxiDNS core is not installed or cannot report its version"
+		return 1
+	fi
+	[ -n "$CURRENT_BUNDLE" ] || CURRENT_BUNDLE="$CORE_BUNDLE"
+	install_core_from_release reinstall "$(version_tag "$CURRENT_VERSION")" "$CURRENT_BUNDLE"
+}
+
+upload_core_error() {
+	rm -rf "${CORE_TMP_DIR:-}" 2>/dev/null || true
+	[ -n "${UPLOAD_PATH:-}" ] && rm -f "$UPLOAD_PATH" 2>/dev/null || true
+	json_error "$1" "$2"
+	return 1
+}
+
+valid_upload_path() {
+	case "$1" in
+		/tmp/oxidns-core-upload-*) return 0 ;;
 	esac
+	return 1
+}
+
+validate_uploaded_binary() {
+	BIN="$1"
+	chmod 755 "$BIN"
+	if command -v hexdump >/dev/null 2>&1; then
+		MAGIC="$(dd if="$BIN" bs=4 count=1 2>/dev/null | hexdump -v -e '1/1 "%02x"')"
+		[ "$MAGIC" = "7f454c46" ] || return 1
+	elif command -v od >/dev/null 2>&1; then
+		MAGIC="$(dd if="$BIN" bs=4 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+		[ "$MAGIC" = "7f454c46" ] || return 1
+	fi
+	CHECK_BIN="$(dirname "$OXIDNS_BIN")/.oxidns-upload-check.$$"
+	mkdir -p "$(dirname "$OXIDNS_BIN")"
+	cp "$BIN" "$CHECK_BIN" || return 1
+	chmod 755 "$CHECK_BIN"
+	set +e
+	"$CHECK_BIN" build-info >/dev/null 2>&1
+	VALIDATE_RC="$?"
+	set -e
+	rm -f "$CHECK_BIN"
+	[ "$VALIDATE_RC" -eq 0 ]
+}
+
+install_uploaded_core_from_unpack() {
+	UPLOAD_KIND="$1"
+	UNPACK_DIR="$2"
+	HAS_WEBUI=0
+	CONFIG_CHECK_OK=0
+	CONFIG_CHECK_OUTPUT=""
+	SERVICE_RESTART="not_requested"
+
+	if [ ! -f "$UNPACK_DIR/oxidns" ]; then
+		upload_core_error "uploaded_core_invalid" "uploaded archive does not contain an oxidns binary"
+		return 1
+	fi
+	if ! validate_uploaded_binary "$UNPACK_DIR/oxidns"; then
+		upload_core_error "uploaded_core_invalid" "uploaded oxidns binary cannot report build-info"
+		return 1
+	fi
+
+	CONFIG_TMP=""
+	if [ ! -e "$CONFIG_PATH" ] && [ -f "$UNPACK_DIR/config.yaml" ]; then
+		CONFIG_TMP="$CORE_TMP_DIR/config.yaml.openwrt"
+		if ! write_openwrt_default_config "$UNPACK_DIR/config.yaml" "$CONFIG_TMP"; then
+			upload_core_error "default_config_unsupported" "uploaded config.yaml cannot be adapted for OpenWrt defaults"
+			return 1
+		fi
+	fi
+
+	SERVICE_WAS_RUNNING=0
+	if service_running; then SERVICE_WAS_RUNNING=1; fi
+	INIT="$(init_script)"
+	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
+		"$INIT" stop >/dev/null 2>&1 || true
+	fi
+
+	mkdir -p "$(dirname "$OXIDNS_BIN")" "$WORKING_DIR"
+	cp "$UNPACK_DIR/oxidns" "$CORE_TMP_DIR/oxidns.new"
+	chmod 755 "$CORE_TMP_DIR/oxidns.new"
+	mv "$CORE_TMP_DIR/oxidns.new" "$OXIDNS_BIN"
+
+	if [ -d "$UNPACK_DIR/webui" ]; then
+		WEBUI_TMP="$CORE_TMP_DIR/webui.new"
+		rm -rf "$WEBUI_TMP"
+		mkdir -p "$(dirname "$WEBUI_DIR")" "$WEBUI_TMP"
+		cp -R "$UNPACK_DIR/webui/." "$WEBUI_TMP/"
+		rm -rf "$WEBUI_DIR"
+		mv "$WEBUI_TMP" "$WEBUI_DIR"
+		HAS_WEBUI=1
+	fi
+
+	if [ -n "$CONFIG_TMP" ]; then
+		mkdir -p "$(dirname "$CONFIG_PATH")"
+		mv "$CONFIG_TMP" "$CONFIG_PATH"
+	elif [ -f "$UNPACK_DIR/config.yaml" ]; then
+		cp "$UNPACK_DIR/config.yaml" "$WORKING_DIR/config.yaml.example" 2>/dev/null || true
+	fi
+
+	if [ -e "$CONFIG_PATH" ]; then
+		if CONFIG_CHECK_OUTPUT="$(validate_config_file "$CONFIG_PATH" 2>&1)"; then
+			CONFIG_CHECK_OK=1
+		else
+			CONFIG_CHECK_OUTPUT="${CONFIG_CHECK_OUTPUT:-configuration check failed}"
+		fi
+	else
+		CONFIG_CHECK_OUTPUT="configuration file is not installed"
+	fi
+
+	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
+		if "$INIT" start >/dev/null 2>&1; then
+			SERVICE_RESTART="requested"
+		else
+			SERVICE_RESTART="failed"
+		fi
+	fi
+
+	BUILD_JSON="$(build_info_json)"
+	VERSION="$(json_value_from_string version "$BUILD_JSON")"
+	BUNDLE="$(json_value_from_string bundle "$BUILD_JSON")"
+	rm -f "$UPLOAD_PATH"
+	rm -rf "$CORE_TMP_DIR"
+	printf '{"ok":true,"action":"upload_install","kind":'
+	json_string "$UPLOAD_KIND"
+	printf ',"version":'
+	json_string "$VERSION"
+	printf ',"bundle":'
+	json_string "$BUNDLE"
+	printf ',"binary_path":'
+	json_string "$OXIDNS_BIN"
+	printf ',"webui_installed":'
+	json_bool "$HAS_WEBUI"
+	printf ',"webui_path":'
+	json_string "$WEBUI_DIR"
+	printf ',"service_restart":'
+	json_string "$SERVICE_RESTART"
+	printf ',"config_check":{"ok":'
+	json_bool "$CONFIG_CHECK_OK"
+	printf ',"message":'
+	json_string "$CONFIG_CHECK_OUTPUT"
+	printf '}}\n'
+}
+
+emit_core_upload_install() {
+	load_settings
+	INPUT="$(cat)"
+	UPLOAD_PATH="$(input_value path "$INPUT")"
+
+	if ! valid_upload_path "$UPLOAD_PATH" || [ ! -f "$UPLOAD_PATH" ]; then
+		json_error "invalid_upload_path" "uploaded file must be a readable /tmp/oxidns-core-upload-* file"
+		return 1
+	fi
+
+	CORE_TMP_DIR="$(mktemp -d "$TMP_ROOT/oxidns-core-upload.XXXXXX")"
+	UNPACK_DIR="$CORE_TMP_DIR/unpack"
+	mkdir -p "$UNPACK_DIR"
+
+	if tar -tzf "$UPLOAD_PATH" >/dev/null 2>&1; then
+		if ! tar -xzf "$UPLOAD_PATH" -C "$UNPACK_DIR"; then
+			upload_core_error "uploaded_archive_unpack_failed" "failed to unpack uploaded OxiDNS archive"
+			return 1
+		fi
+		install_uploaded_core_from_unpack "archive" "$UNPACK_DIR"
+		return $?
+	fi
+
+	cp "$UPLOAD_PATH" "$UNPACK_DIR/oxidns"
+	install_uploaded_core_from_unpack "binary" "$UNPACK_DIR"
+}
+
+emit_core_remove() {
+	load_settings
+	INIT="$(init_script)"
+	if [ -x "$INIT" ]; then
+		"$INIT" stop >/dev/null 2>&1 || true
+		"$INIT" disable >/dev/null 2>&1 || true
+	fi
+	rm -f "$OXIDNS_BIN"
+	rm -rf "$WEBUI_DIR"
+	printf '{"ok":true,"action":"remove","binary_path":'
+	json_string "$OXIDNS_BIN"
+	printf ',"webui_path":'
+	json_string "$WEBUI_DIR"
+	printf ',"config_preserved":true,"working_dir_preserved":true}\n'
 }
 
 case "${1:-}" in
 	list)
 		printf '{'
 		printf '"status":{},'
-		printf '"package_manager":{},'
-		printf '"package_check_update":{"manifest_url":"string"},'
-		printf '"package_install":{"url":"string","sha256":"string"},'
-		printf '"package_upgrade":{"url":"string","sha256":"string"},'
-		printf '"package_remove":{},'
+		printf '"core_install":{},'
+		printf '"core_reinstall":{},'
+		printf '"core_upload_install":{"path":"string"},'
+		printf '"core_remove":{},'
 		printf '"service_start":{},'
 		printf '"service_stop":{},'
 		printf '"service_restart":{},'
@@ -1013,11 +1254,9 @@ case "${1:-}" in
 		printf '"service_disable":{},'
 		printf '"config_read":{},'
 		printf '"config_validate":{"content":"string"},'
-		printf '"config_save":{"content":"string","base_mtime":"string","reload":"boolean"},'
-		printf '"config_basic_read":{},'
-		printf '"config_basic_save":{"log_level":"string","api_http_listen":"string","base_mtime":"string","reload":"boolean"},'
+		printf '"config_save":{"content":"string","base_mtime":"string","restart":"boolean"},'
 		printf '"settings_read":{},'
-		printf '"settings_save":{"install_mode":"string","service_name":"string","config_path":"string","working_dir":"string","api_base_url":"string","package_feed_url":"string","manifest_url":"string","download_proxy":"string","github_token":"string"},'
+		printf '"settings_save":{"core_repository":"string","core_bundle":"string","config_path":"string","working_dir":"string","download_proxy":"string","github_token":"string"},'
 		printf '"logs_recent":{"limit":"number"}'
 		printf '}\n'
 		;;
@@ -1026,20 +1265,17 @@ case "${1:-}" in
 			status)
 				emit_status
 				;;
-			package_manager)
-				emit_package_manager
+			core_install)
+				emit_core_install
 				;;
-			package_check_update)
-				emit_package_check_update
+			core_reinstall)
+				emit_core_reinstall
 				;;
-			package_install)
-				emit_package_install install
+			core_upload_install)
+				emit_core_upload_install
 				;;
-			package_upgrade)
-				emit_package_install upgrade
-				;;
-			package_remove)
-				emit_package_remove
+			core_remove)
+				emit_core_remove
 				;;
 			service_start)
 				run_service start
@@ -1064,12 +1300,6 @@ case "${1:-}" in
 				;;
 			config_save)
 				emit_config_save
-				;;
-			config_basic_read)
-				emit_config_basic_read
-				;;
-			config_basic_save)
-				emit_config_basic_save
 				;;
 			settings_read)
 				emit_settings_read
