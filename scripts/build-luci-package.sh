@@ -62,6 +62,24 @@ EOF
 	chmod 755 "$out"
 }
 
+write_i18n_postinst_script() {
+	out="$1"
+	cat > "$out" <<'EOF'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT:-}" ] && exit 0
+if [ -x /etc/uci-defaults/luci-i18n-oxidns-zh-cn ]; then
+	/etc/uci-defaults/luci-i18n-oxidns-zh-cn >/dev/null 2>&1 || true
+fi
+rm -f /tmp/luci-indexcache* 2>/dev/null || true
+rm -rf /tmp/luci-modulecache/* 2>/dev/null || true
+if [ -x /etc/init.d/rpcd ]; then
+	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+fi
+exit 0
+EOF
+	chmod 755 "$out"
+}
+
 CONTROL_DIR="$TMP_DIR/control"
 DATA_DIR="$TMP_DIR/data"
 I18N_CONTROL_DIR="$TMP_DIR/i18n-control"
@@ -128,23 +146,24 @@ printf 'Wrote %s\n' "$OUT_DIR/${PKG_FILE_BASE}.apk"
 if [ -f po/zh_Hans/oxidns.po ]; then
 	mkdir -p "$I18N_CONTROL_DIR" "$I18N_DATA_DIR/usr/lib/lua/luci/i18n" "$I18N_DATA_DIR/etc/uci-defaults"
 
-	cat > "$I18N_CONTROL_DIR/control" <<EOF
-Package: $I18N_PKG_NAME
-Version: $PKG_VERSION-r1
-Architecture: all
-Maintainer: Sven Shi <isvenshi@gmail.com>
+	cat > "$I18N_CONTROL_DIR/control" <<-EOF
+	Package: $I18N_PKG_NAME
+	Version: $PKG_VERSION-r1
+	Architecture: all
+	Maintainer: Sven Shi <isvenshi@gmail.com>
 Depends: $PKG_NAME
 Source: https://github.com/svenshi/luci-app-oxidns
 Section: luci
 Priority: optional
-Description: Simplified Chinese translation for luci-app-oxidns
-EOF
+	Description: Simplified Chinese translation for luci-app-oxidns
+	EOF
 
-	cat > "$I18N_DATA_DIR/etc/uci-defaults/$I18N_PKG_NAME" <<'EOF'
-uci set luci.languages.zh_cn='简体中文 (Simplified Chinese)'
-uci commit luci
-EOF
+	cat > "$I18N_DATA_DIR/etc/uci-defaults/$I18N_PKG_NAME" <<-'EOF'
+	uci set luci.languages.zh_cn='简体中文 (Simplified Chinese)'
+	uci commit luci
+	EOF
 	chmod 755 "$I18N_DATA_DIR/etc/uci-defaults/$I18N_PKG_NAME"
+	write_i18n_postinst_script "$I18N_CONTROL_DIR/postinst"
 
 	node scripts/po2lmo.mjs po/zh_Hans/oxidns.po "$I18N_DATA_DIR/usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo"
 
@@ -152,17 +171,19 @@ EOF
 	tar_create_gz "$TMP_DIR/data.tar.gz" -C "$I18N_DATA_DIR" .
 	create_ipk "$OUT_DIR/${I18N_FILE_BASE}.ipk" "$TMP_DIR/control.tar.gz" "$TMP_DIR/data.tar.gz"
 
-	cat > "$I18N_DATA_DIR/.PKGINFO" <<EOF
-pkgname = $I18N_PKG_NAME
-pkgver = $PKG_VERSION-r1
-pkgdesc = Simplified Chinese translation for luci-app-oxidns
-url = https://github.com/svenshi/luci-app-oxidns
-builddate = $(date +%s)
-packager = Sven Shi <isvenshi@gmail.com>
-arch = all
-origin = $I18N_PKG_NAME
-depend = $PKG_NAME
-EOF
+	cat > "$I18N_DATA_DIR/.PKGINFO" <<-EOF
+	pkgname = $I18N_PKG_NAME
+	pkgver = $PKG_VERSION-r1
+	pkgdesc = Simplified Chinese translation for luci-app-oxidns
+	url = https://github.com/svenshi/luci-app-oxidns
+	builddate = $(date +%s)
+	packager = Sven Shi <isvenshi@gmail.com>
+	arch = all
+	origin = $I18N_PKG_NAME
+	depend = $PKG_NAME
+	EOF
+	write_i18n_postinst_script "$I18N_DATA_DIR/.post-install"
+	cp "$I18N_DATA_DIR/.post-install" "$I18N_DATA_DIR/.post-upgrade"
 
 	tar_create_gz "$OUT_DIR/${I18N_FILE_BASE}.apk" -C "$I18N_DATA_DIR" .
 
