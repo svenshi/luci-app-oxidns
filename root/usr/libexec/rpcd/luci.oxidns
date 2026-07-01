@@ -897,7 +897,7 @@ validate_safe_archive() {
 	if ! tar -tvzf "$ARCHIVE" | awk '
 		{
 			type = substr($0, 1, 1);
-			if (type == "l" || type == "h")
+			if (type != "-" && type != "d")
 				bad = 1;
 		}
 		END { exit bad ? 1 : 0 }
