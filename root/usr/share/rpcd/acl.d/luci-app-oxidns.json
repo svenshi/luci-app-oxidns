@@ -5,6 +5,7 @@
 			"ubus": {
 				"luci.oxidns": [
 					"status",
+					"core_progress",
 					"config_read",
 					"config_validate",
 					"settings_read",

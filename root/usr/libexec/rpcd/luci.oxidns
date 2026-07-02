@@ -13,6 +13,7 @@ DEFAULT_CORE_REPOSITORY="svenshi/oxidns"
 DEFAULT_CORE_BUNDLE="full"
 GITHUB_API_BASE="https://api.github.com"
 TMP_ROOT="${TMPDIR:-/tmp}"
+CORE_PROGRESS_LOG="$TMP_ROOT/oxidns-core-progress.log"
 
 CONFIG_PATH="$DEFAULT_CONFIG_PATH"
 WORKING_DIR="$DEFAULT_WORKING_DIR"
@@ -21,6 +22,8 @@ CORE_REPOSITORY="$DEFAULT_CORE_REPOSITORY"
 CORE_BUNDLE="$DEFAULT_CORE_BUNDLE"
 DOWNLOAD_PROXY=""
 GITHUB_TOKEN=""
+DOWNLOAD_ERROR=""
+DOWNLOAD_RC=""
 
 json_escape_stream() {
 	awk 'BEGIN { ORS = "" }
@@ -64,6 +67,93 @@ json_error() {
 	json_string "$1"
 	printf ',"message":'
 	json_string "$2"
+	printf '}\n'
+}
+
+json_detailed_error() {
+	CODE="$1"
+	MESSAGE="$2"
+	STAGE="${3:-}"
+	DETAIL="${4:-}"
+
+	printf '{'
+	printf '"ok":false,'
+	printf '"code":'
+	json_string "$CODE"
+	printf ',"message":'
+	json_string "$MESSAGE"
+	if [ -n "$STAGE" ]; then
+		printf ',"stage":'
+		json_string "$STAGE"
+	fi
+	if [ -n "$DETAIL" ]; then
+		printf ',"detail":'
+		json_string "$DETAIL"
+	fi
+	printf '}\n'
+}
+
+sanitize_progress_text() {
+	awk -v token="$GITHUB_TOKEN" -v proxy="$DOWNLOAD_PROXY" '
+		function redact(value, secret,    out, pos) {
+			if (secret == "")
+				return value;
+			out = "";
+			while ((pos = index(value, secret)) > 0) {
+				out = out substr(value, 1, pos - 1) "[redacted]";
+				value = substr(value, pos + length(secret));
+			}
+			return out value;
+		}
+		{
+			line = redact(redact($0, token), proxy);
+			gsub(/[[:cntrl:]]/, " ", line);
+			print line;
+		}
+	'
+}
+
+progress_timestamp() {
+	date '+%H:%M:%S' 2>/dev/null || printf '--:--:--'
+}
+
+core_progress_log() {
+	PROGRESS_KIND="$1"
+	PROGRESS_MESSAGE="$2"
+	PROGRESS_TEXT="$(printf '%s' "$PROGRESS_MESSAGE" | sanitize_progress_text)"
+	[ -n "$PROGRESS_TEXT" ] || PROGRESS_TEXT="-"
+	mkdir -p "$(dirname "$CORE_PROGRESS_LOG")" 2>/dev/null || true
+	printf '[%s] %s %s\n' "$(progress_timestamp)" "$PROGRESS_KIND" "$PROGRESS_TEXT" >> "$CORE_PROGRESS_LOG" 2>/dev/null || true
+}
+
+core_progress_command() {
+	core_progress_log "command" "+ $1"
+}
+
+core_progress_reset() {
+	mkdir -p "$(dirname "$CORE_PROGRESS_LOG")" 2>/dev/null || true
+	: > "$CORE_PROGRESS_LOG" 2>/dev/null || true
+	chmod 600 "$CORE_PROGRESS_LOG" 2>/dev/null || true
+	core_progress_log "info" "$1"
+}
+
+file_size_bytes() {
+	[ -f "$1" ] || {
+		printf '0'
+		return 0
+	}
+	wc -c < "$1" 2>/dev/null | awk '{ print $1 + 0 }'
+}
+
+emit_core_progress() {
+	printf '{"ok":true,"path":'
+	json_string "$CORE_PROGRESS_LOG"
+	printf ',"mtime":'
+	json_string "$(stat_mtime "$CORE_PROGRESS_LOG")"
+	printf ',"size":'
+	json_string "$(file_size_bytes "$CORE_PROGRESS_LOG")"
+	printf ',"text":'
+	json_file_string "$CORE_PROGRESS_LOG"
 	printf '}\n'
 }
 
@@ -638,41 +728,131 @@ emit_logs_recent() {
 	rm -f "$TMP_FILE"
 }
 
+read_error_detail_file() {
+	DETAIL_FILE="$1"
+	[ -r "$DETAIL_FILE" ] || return 0
+	awk -v token="$GITHUB_TOKEN" -v proxy="$DOWNLOAD_PROXY" '
+		function redact(value, secret,    out, pos) {
+			if (secret == "")
+				return value;
+			out = "";
+			while ((pos = index(value, secret)) > 0) {
+				out = out substr(value, 1, pos - 1) "[redacted]";
+				value = substr(value, pos + length(secret));
+			}
+			return out value;
+		}
+		{
+			line = redact(redact($0, token), proxy);
+			gsub(/[[:cntrl:]]/, " ", line);
+			print line;
+		}
+	' "$DETAIL_FILE" | tail -c 1200
+}
+
+set_download_error_from_file() {
+	ERROR_FILE="$1"
+	ERROR_RC="$2"
+	ERROR_TOOL="$3"
+	ERROR_DETAIL="$(read_error_detail_file "$ERROR_FILE" 2>/dev/null || true)"
+	ERROR_DETAIL="$(printf '%s' "$ERROR_DETAIL" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+	[ -n "$ERROR_DETAIL" ] || ERROR_DETAIL="$ERROR_TOOL exited with code $ERROR_RC"
+	DOWNLOAD_RC="$ERROR_RC"
+	DOWNLOAD_ERROR="$ERROR_TOOL exited with code $ERROR_RC: $ERROR_DETAIL"
+	rm -f "$ERROR_FILE"
+}
+
+run_download_command() {
+	DOWNLOAD_TOOL="$1"
+	DOWNLOAD_DISPLAY="$2"
+	DOWNLOAD_OUT="$3"
+	shift 3
+	DOWNLOAD_ERR_FILE="$(mktemp "$TMP_ROOT/oxidns-download.XXXXXX")"
+	DOWNLOAD_DONE_FILE="$(mktemp "$TMP_ROOT/oxidns-download-done.XXXXXX")"
+	rm -f "$DOWNLOAD_DONE_FILE"
+	core_progress_command "$DOWNLOAD_DISPLAY"
+	case "$-" in
+		*e*) DOWNLOAD_RESTORE_ERREXIT=1 ;;
+		*) DOWNLOAD_RESTORE_ERREXIT=0 ;;
+	esac
+	set +e
+	DOWNLOAD_LAST_SIZE=""
+	(
+		while [ ! -f "$DOWNLOAD_DONE_FILE" ]; do
+			if [ -f "$DOWNLOAD_OUT" ]; then
+				DOWNLOAD_SIZE="$(file_size_bytes "$DOWNLOAD_OUT")"
+				if [ "$DOWNLOAD_SIZE" != "$DOWNLOAD_LAST_SIZE" ]; then
+					core_progress_log "progress" "$DOWNLOAD_TOOL downloaded $DOWNLOAD_SIZE bytes"
+					DOWNLOAD_LAST_SIZE="$DOWNLOAD_SIZE"
+				fi
+			fi
+			sleep 1
+		done
+	) &
+	DOWNLOAD_MONITOR_PID="$!"
+	"$@" >/dev/null 2>"$DOWNLOAD_ERR_FILE"
+	DOWNLOAD_CMD_RC="$?"
+	: > "$DOWNLOAD_DONE_FILE"
+	wait "$DOWNLOAD_MONITOR_PID" 2>/dev/null || true
+	rm -f "$DOWNLOAD_DONE_FILE"
+	if [ "$DOWNLOAD_RESTORE_ERREXIT" = "1" ]; then
+		set -e
+	else
+		set +e
+	fi
+	if [ "$DOWNLOAD_CMD_RC" -eq 0 ]; then
+		rm -f "$DOWNLOAD_ERR_FILE"
+		DOWNLOAD_ERROR=""
+		DOWNLOAD_RC=0
+		core_progress_log "success" "$DOWNLOAD_TOOL download complete: $(file_size_bytes "$DOWNLOAD_OUT") bytes"
+		return 0
+	fi
+	set_download_error_from_file "$DOWNLOAD_ERR_FILE" "$DOWNLOAD_CMD_RC" "$DOWNLOAD_TOOL"
+	core_progress_log "error" "$DOWNLOAD_ERROR"
+	return "$DOWNLOAD_CMD_RC"
+}
+
 download_file() {
 	URL="$1"
 	OUT="$2"
+	DOWNLOAD_ERROR=""
+	DOWNLOAD_RC=""
 	if command -v curl >/dev/null 2>&1; then
 		if [ -n "$DOWNLOAD_PROXY" ]; then
 			if [ -n "$GITHUB_TOKEN" ]; then
-				curl -fsSL --proxy "$DOWNLOAD_PROXY" -H "User-Agent: luci-app-oxidns" -H "Authorization: Bearer $GITHUB_TOKEN" -o "$OUT" "$URL"
+				run_download_command curl "curl -fsSL --proxy [configured] -H 'User-Agent: luci-app-oxidns' -H 'Authorization: Bearer [redacted]' -o $OUT $URL" "$OUT" curl -fsSL --proxy "$DOWNLOAD_PROXY" -H "User-Agent: luci-app-oxidns" -H "Authorization: Bearer $GITHUB_TOKEN" -o "$OUT" "$URL"
 			else
-				curl -fsSL --proxy "$DOWNLOAD_PROXY" -H "User-Agent: luci-app-oxidns" -o "$OUT" "$URL"
+				run_download_command curl "curl -fsSL --proxy [configured] -H 'User-Agent: luci-app-oxidns' -o $OUT $URL" "$OUT" curl -fsSL --proxy "$DOWNLOAD_PROXY" -H "User-Agent: luci-app-oxidns" -o "$OUT" "$URL"
 			fi
 		elif [ -n "$GITHUB_TOKEN" ]; then
-			curl -fsSL -H "User-Agent: luci-app-oxidns" -H "Authorization: Bearer $GITHUB_TOKEN" -o "$OUT" "$URL"
+			run_download_command curl "curl -fsSL -H 'User-Agent: luci-app-oxidns' -H 'Authorization: Bearer [redacted]' -o $OUT $URL" "$OUT" curl -fsSL -H "User-Agent: luci-app-oxidns" -H "Authorization: Bearer $GITHUB_TOKEN" -o "$OUT" "$URL"
 		else
-			curl -fsSL -H "User-Agent: luci-app-oxidns" -o "$OUT" "$URL"
+			run_download_command curl "curl -fsSL -H 'User-Agent: luci-app-oxidns' -o $OUT $URL" "$OUT" curl -fsSL -H "User-Agent: luci-app-oxidns" -o "$OUT" "$URL"
 		fi
 	elif command -v uclient-fetch >/dev/null 2>&1; then
 		if [ -n "$GITHUB_TOKEN" ]; then
-			uclient-fetch -q -O "$OUT" --header="User-Agent: luci-app-oxidns" --header="Authorization: Bearer $GITHUB_TOKEN" "$URL"
+			run_download_command uclient-fetch "uclient-fetch -O $OUT --header='User-Agent: luci-app-oxidns' --header='Authorization: Bearer [redacted]' $URL" "$OUT" uclient-fetch -O "$OUT" --header="User-Agent: luci-app-oxidns" --header="Authorization: Bearer $GITHUB_TOKEN" "$URL"
 		else
-			uclient-fetch -q -O "$OUT" --header="User-Agent: luci-app-oxidns" "$URL"
+			run_download_command uclient-fetch "uclient-fetch -O $OUT --header='User-Agent: luci-app-oxidns' $URL" "$OUT" uclient-fetch -O "$OUT" --header="User-Agent: luci-app-oxidns" "$URL"
 		fi
 	elif command -v wget >/dev/null 2>&1; then
 		if [ -n "$GITHUB_TOKEN" ]; then
-			wget -q --header="User-Agent: luci-app-oxidns" --header="Authorization: Bearer $GITHUB_TOKEN" -O "$OUT" "$URL"
+			run_download_command wget "wget --header='User-Agent: luci-app-oxidns' --header='Authorization: Bearer [redacted]' -O $OUT $URL" "$OUT" wget --header="User-Agent: luci-app-oxidns" --header="Authorization: Bearer $GITHUB_TOKEN" -O "$OUT" "$URL"
 		else
-			wget -q --header="User-Agent: luci-app-oxidns" -O "$OUT" "$URL"
+			run_download_command wget "wget --header='User-Agent: luci-app-oxidns' -O $OUT $URL" "$OUT" wget --header="User-Agent: luci-app-oxidns" -O "$OUT" "$URL"
 		fi
 	else
+		DOWNLOAD_RC=127
+		DOWNLOAD_ERROR="none of curl, uclient-fetch, or wget is installed"
+		core_progress_log "error" "$DOWNLOAD_ERROR"
 		return 1
 	fi
 }
 
 require_download_transport() {
 	if [ -n "$DOWNLOAD_PROXY" ] && ! command -v curl >/dev/null 2>&1; then
-		json_error "download_proxy_requires_curl" "download_proxy is configured, but curl is not installed; install curl or clear download_proxy"
+		core_progress_log "error" "download_proxy requires curl, but curl is not installed"
+		json_detailed_error "download_proxy_requires_curl" "download_proxy is configured, but curl is not installed; install curl or clear download_proxy" "prepare_download" "download_proxy only works with curl on OpenWrt"
 		return 1
 	fi
 	return 0
@@ -759,18 +939,28 @@ download_file_with_resolver_fallback() {
 	if download_file "$URL" "$OUT"; then
 		return 0
 	fi
+	INITIAL_DOWNLOAD_ERROR="$DOWNLOAD_ERROR"
+	INITIAL_DOWNLOAD_RC="$DOWNLOAD_RC"
 	if ! resolver_has_only_loopback; then
 		return 1
 	fi
 	if ! begin_bootstrap_resolver; then
+		DOWNLOAD_RC="${INITIAL_DOWNLOAD_RC:-1}"
+		DOWNLOAD_ERROR="initial download failed: ${INITIAL_DOWNLOAD_ERROR:-unknown download error}; resolver fallback setup failed"
 		return 1
 	fi
 	set +e
 	download_file "$URL" "$OUT"
-	DOWNLOAD_RC="$?"
+	FALLBACK_DOWNLOAD_RC="$?"
+	FALLBACK_DOWNLOAD_ERROR="$DOWNLOAD_ERROR"
 	set -e
 	restore_bootstrap_resolver
-	return "$DOWNLOAD_RC"
+	if [ "$FALLBACK_DOWNLOAD_RC" -eq 0 ]; then
+		return 0
+	fi
+	DOWNLOAD_RC="$FALLBACK_DOWNLOAD_RC"
+	DOWNLOAD_ERROR="initial download failed: ${INITIAL_DOWNLOAD_ERROR:-unknown download error}; fallback resolver download failed: ${FALLBACK_DOWNLOAD_ERROR:-unknown download error}"
+	return "$FALLBACK_DOWNLOAD_RC"
 }
 
 sha256_file() {
@@ -965,8 +1155,15 @@ write_openwrt_default_config() {
 }
 
 core_install_error() {
+	ERROR_CODE="$1"
+	ERROR_MESSAGE="$2"
+	ERROR_STAGE="${3:-}"
+	ERROR_DETAIL="${4:-}"
 	rm -rf "${CORE_TMP_DIR:-}" 2>/dev/null || true
-	json_error "$1" "$2"
+	core_progress_log "error" "$ERROR_CODE: $ERROR_MESSAGE"
+	[ -n "$ERROR_STAGE" ] && core_progress_log "error" "stage=$ERROR_STAGE"
+	[ -n "$ERROR_DETAIL" ] && core_progress_log "error" "$ERROR_DETAIL"
+	json_detailed_error "$ERROR_CODE" "$ERROR_MESSAGE" "$ERROR_STAGE" "$ERROR_DETAIL"
 	return 1
 }
 
@@ -980,19 +1177,25 @@ install_core_from_release() {
 	case "$CORE_REPOSITORY" in
 		*/*) ;;
 		*)
+			core_progress_log "error" "invalid core_repository: $CORE_REPOSITORY"
 			json_error "invalid_core_repository" "core_repository must use owner/repo format"
 			return 1
 			;;
 	esac
 
+	core_progress_command "uname -m"
 	if ! RUST_TARGET="$(detect_rust_target 2>/dev/null)"; then
+		core_progress_log "error" "unsupported CPU architecture"
 		json_error "unsupported_target" "current CPU architecture does not match a published OxiDNS Linux musl release"
 		return 1
 	fi
+	core_progress_log "info" "target=$RUST_TARGET"
 	if ! ASSET_NAME="$(asset_name_for_bundle "$REQUEST_BUNDLE" "$RUST_TARGET")"; then
+		core_progress_log "error" "unsupported bundle: $REQUEST_BUNDLE"
 		json_error "unsupported_core_bundle" "core bundle must be one of full, standard, minimal"
 		return 1
 	fi
+	core_progress_log "info" "repository=$CORE_REPOSITORY bundle=$REQUEST_BUNDLE asset=$ASSET_NAME"
 
 	CORE_TMP_DIR="$(mktemp -d "$TMP_ROOT/oxidns-core.XXXXXX")"
 	RELEASE_FILE="$CORE_TMP_DIR/release.json"
@@ -1000,52 +1203,75 @@ install_core_from_release() {
 	UNPACK_DIR="$CORE_TMP_DIR/unpack"
 	RELEASE_URL="$(release_api_url "$CORE_REPOSITORY" "$RELEASE_TARGET")"
 
+	core_progress_log "info" "fetch release metadata: $RELEASE_URL"
 	if ! download_file_with_resolver_fallback "$RELEASE_URL" "$RELEASE_FILE"; then
-		core_install_error "release_fetch_failed" "failed to fetch OxiDNS release metadata"
+		core_install_error "release_fetch_failed" "failed to fetch OxiDNS release metadata" "download_metadata" "repository=$CORE_REPOSITORY release=$RELEASE_TARGET url=$RELEASE_URL; ${DOWNLOAD_ERROR:-unknown download error}"
 		return 1
 	fi
-	if ! select_release_asset "$RELEASE_FILE" "$ASSET_NAME"; then
-		core_install_error "release_asset_not_found" "selected OxiDNS release does not contain the required archive"
+	core_progress_command "jsonfilter release metadata for $ASSET_NAME"
+	set +e
+	select_release_asset "$RELEASE_FILE" "$ASSET_NAME"
+	SELECT_RELEASE_RC="$?"
+	set -e
+	if [ "$SELECT_RELEASE_RC" -ne 0 ]; then
+		if [ "$SELECT_RELEASE_RC" -eq 2 ]; then
+			SELECT_RELEASE_DETAIL="jsonfilter is not installed or unavailable; wanted asset=$ASSET_NAME repository=$CORE_REPOSITORY release=$RELEASE_TARGET"
+		else
+			SELECT_RELEASE_DETAIL="wanted asset=$ASSET_NAME repository=$CORE_REPOSITORY release=$RELEASE_TARGET"
+		fi
+		core_install_error "release_asset_not_found" "selected OxiDNS release does not contain the required archive" "select_release_asset" "$SELECT_RELEASE_DETAIL"
 		return 1
 	fi
+	core_progress_log "success" "selected release=$SELECT_TAG asset=$SELECT_ASSET_NAME size=${SELECT_SIZE:-unknown}"
 	if ! valid_sha256 "$SELECT_SHA256"; then
-		core_install_error "release_digest_missing" "selected OxiDNS release asset does not include a valid SHA256 digest"
+		core_install_error "release_digest_missing" "selected OxiDNS release asset does not include a valid SHA256 digest" "verify_release_digest" "asset=$SELECT_ASSET_NAME digest=${SELECT_SHA256:-missing}"
 		return 1
 	fi
+	core_progress_log "info" "download archive: $SELECT_URL"
 	if ! download_file_with_resolver_fallback "$SELECT_URL" "$ARCHIVE_FILE"; then
-		core_install_error "core_download_failed" "failed to download OxiDNS core archive"
+		core_install_error "core_download_failed" "failed to download OxiDNS core archive" "download_archive" "asset=$SELECT_ASSET_NAME url=$SELECT_URL; ${DOWNLOAD_ERROR:-unknown download error}"
 		return 1
 	fi
 
+	core_progress_command "sha256sum $ARCHIVE_FILE"
 	ACTUAL_SHA256="$(sha256_file "$ARCHIVE_FILE" || true)"
 	if [ -z "$ACTUAL_SHA256" ] || [ "$ACTUAL_SHA256" != "$SELECT_SHA256" ]; then
-		core_install_error "core_checksum_failed" "OxiDNS core archive SHA256 does not match the release digest"
+		core_install_error "core_checksum_failed" "OxiDNS core archive SHA256 does not match the release digest" "verify_checksum" "asset=$SELECT_ASSET_NAME expected=$SELECT_SHA256 actual=${ACTUAL_SHA256:-missing}"
 		return 1
 	fi
+	core_progress_log "success" "checksum verified: $ACTUAL_SHA256"
+	core_progress_command "tar -tzf $ARCHIVE_FILE"
 	if ! validate_safe_archive "$ARCHIVE_FILE"; then
-		core_install_error "core_archive_unsafe" "OxiDNS core archive contains unsafe paths or links"
+		core_install_error "core_archive_unsafe" "OxiDNS core archive contains unsafe paths or links" "validate_archive" "asset=$SELECT_ASSET_NAME"
 		return 1
 	fi
 
 	mkdir -p "$UNPACK_DIR"
-	if ! tar -xzf "$ARCHIVE_FILE" -C "$UNPACK_DIR"; then
-		core_install_error "core_unpack_failed" "failed to unpack OxiDNS core archive"
+	TAR_OUT="$(mktemp "$TMP_ROOT/oxidns-tar.XXXXXX")"
+	core_progress_command "tar -xzf $ARCHIVE_FILE -C $UNPACK_DIR"
+	if ! tar -xzf "$ARCHIVE_FILE" -C "$UNPACK_DIR" >"$TAR_OUT" 2>&1; then
+		TAR_DETAIL="$(read_error_detail_file "$TAR_OUT" 2>/dev/null || true)"
+		rm -f "$TAR_OUT"
+		core_install_error "core_unpack_failed" "failed to unpack OxiDNS core archive" "unpack_archive" "${TAR_DETAIL:-tar extraction failed}"
 		return 1
 	fi
+	rm -f "$TAR_OUT"
 	if [ ! -f "$UNPACK_DIR/oxidns" ]; then
-		core_install_error "core_archive_invalid" "OxiDNS core archive does not contain an oxidns binary"
+		core_install_error "core_archive_invalid" "OxiDNS core archive does not contain an oxidns binary" "install_files" "asset=$SELECT_ASSET_NAME"
 		return 1
 	fi
+	core_progress_log "success" "archive unpacked"
 
 	CONFIG_TMP=""
 	if [ ! -e "$CONFIG_PATH" ]; then
 		if [ ! -f "$UNPACK_DIR/config.yaml" ]; then
-			core_install_error "core_archive_invalid" "OxiDNS core archive does not contain config.yaml"
+			core_install_error "core_archive_invalid" "OxiDNS core archive does not contain config.yaml" "install_files" "asset=$SELECT_ASSET_NAME"
 			return 1
 		fi
 		CONFIG_TMP="$CORE_TMP_DIR/config.yaml.openwrt"
+		core_progress_command "adapt config.yaml for OpenWrt defaults"
 		if ! write_openwrt_default_config "$UNPACK_DIR/config.yaml" "$CONFIG_TMP"; then
-			core_install_error "default_config_unsupported" "release config.yaml cannot be adapted for OpenWrt defaults"
+			core_install_error "default_config_unsupported" "release config.yaml cannot be adapted for OpenWrt defaults" "install_files" "config=$UNPACK_DIR/config.yaml"
 			return 1
 		fi
 	fi
@@ -1055,15 +1281,18 @@ install_core_from_release() {
 	if service_running; then SERVICE_WAS_RUNNING=1; fi
 	INIT="$(init_script)"
 	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
+		core_progress_command "$INIT stop"
 		"$INIT" stop >/dev/null 2>&1 || true
 	fi
 
+	core_progress_command "install -m 755 $UNPACK_DIR/oxidns $OXIDNS_BIN"
 	mkdir -p "$(dirname "$OXIDNS_BIN")" "$WORKING_DIR"
 	cp "$UNPACK_DIR/oxidns" "$CORE_TMP_DIR/oxidns.new"
 	chmod 755 "$CORE_TMP_DIR/oxidns.new"
 	mv "$CORE_TMP_DIR/oxidns.new" "$OXIDNS_BIN"
 
 	if [ -d "$UNPACK_DIR/webui" ]; then
+		core_progress_command "copy webui files to $WEBUI_DIR"
 		WEBUI_TMP="$CORE_TMP_DIR/webui.new"
 		rm -rf "$WEBUI_TMP"
 		mkdir -p "$(dirname "$WEBUI_DIR")" "$WEBUI_TMP"
@@ -1073,32 +1302,40 @@ install_core_from_release() {
 	fi
 
 	if [ -n "$CONFIG_TMP" ]; then
+		core_progress_command "install default config to $CONFIG_PATH"
 		mkdir -p "$(dirname "$CONFIG_PATH")"
 		mv "$CONFIG_TMP" "$CONFIG_PATH"
 	elif [ -f "$UNPACK_DIR/config.yaml" ]; then
+		core_progress_command "copy config example to $WORKING_DIR/config.yaml.example"
 		cp "$UNPACK_DIR/config.yaml" "$WORKING_DIR/config.yaml.example" 2>/dev/null || true
 	fi
 
 	CONFIG_CHECK_OK=0
+	core_progress_command "$OXIDNS_BIN check -c $CONFIG_PATH -d $WORKING_DIR"
 	if CONFIG_CHECK_OUTPUT="$(validate_config_file "$CONFIG_PATH" 2>&1)"; then
 		CONFIG_CHECK_OK=1
+		core_progress_log "success" "$CONFIG_CHECK_OUTPUT"
 	else
 		CONFIG_CHECK_OUTPUT="${CONFIG_CHECK_OUTPUT:-configuration check failed}"
+		core_progress_log "error" "$CONFIG_CHECK_OUTPUT"
 	fi
 	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
 		SERVICE_OUT="$(mktemp "$TMP_ROOT/oxidns-service.XXXXXX")"
+		core_progress_command "$INIT start"
 		if "$INIT" start >"$SERVICE_OUT" 2>&1; then
 			SERVICE_RESTART="requested"
+			core_progress_log "success" "service restarted"
 		else
-			MSG="$(cat "$SERVICE_OUT" 2>/dev/null || true)"
+			MSG="$(read_error_detail_file "$SERVICE_OUT" 2>/dev/null || true)"
 			rm -f "$SERVICE_OUT"
-			core_install_error "service_restart_failed" "core installed, but service restart failed: ${MSG:-service restart failed}"
+			core_install_error "service_restart_failed" "core installed, but service restart failed" "restart_service" "${MSG:-service restart failed}"
 			return 1
 		fi
 		rm -f "$SERVICE_OUT"
 	fi
 
 	rm -rf "$CORE_TMP_DIR"
+	core_progress_log "success" "core $ACTION completed: version=$SELECT_TAG bundle=$REQUEST_BUNDLE target=$RUST_TARGET"
 	printf '{"ok":true,"action":'
 	json_string "$ACTION"
 	printf ',"version":'
@@ -1124,7 +1361,9 @@ install_core_from_release() {
 
 emit_core_install() {
 	load_settings
+	core_progress_reset "install OxiDNS core"
 	if [ -x "$OXIDNS_BIN" ]; then
+		core_progress_log "error" "core already installed"
 		json_error "core_already_installed" "OxiDNS core is already installed; use repair reinstall instead"
 		return 1
 	fi
@@ -1133,21 +1372,31 @@ emit_core_install() {
 
 emit_core_reinstall() {
 	load_settings
+	core_progress_reset "repair reinstall OxiDNS core"
 	BUILD_JSON="$(build_info_json)"
 	CURRENT_VERSION="$(json_value_from_string version "$BUILD_JSON")"
 	CURRENT_BUNDLE="$(json_value_from_string bundle "$BUILD_JSON")"
 	if [ ! -x "$OXIDNS_BIN" ] || [ -z "$CURRENT_VERSION" ]; then
+		core_progress_log "error" "core is not installed or cannot report its version"
 		json_error "core_not_installed" "OxiDNS core is not installed or cannot report its version"
 		return 1
 	fi
+	core_progress_log "info" "current_version=$CURRENT_VERSION current_bundle=${CURRENT_BUNDLE:-$CORE_BUNDLE}"
 	[ -n "$CURRENT_BUNDLE" ] || CURRENT_BUNDLE="$CORE_BUNDLE"
 	install_core_from_release reinstall "$(version_tag "$CURRENT_VERSION")" "$CURRENT_BUNDLE"
 }
 
 upload_core_error() {
+	ERROR_CODE="$1"
+	ERROR_MESSAGE="$2"
+	ERROR_STAGE="${3:-}"
+	ERROR_DETAIL="${4:-}"
 	rm -rf "${CORE_TMP_DIR:-}" 2>/dev/null || true
 	[ -n "${UPLOAD_PATH:-}" ] && rm -f "$UPLOAD_PATH" 2>/dev/null || true
-	json_error "$1" "$2"
+	core_progress_log "error" "$ERROR_CODE: $ERROR_MESSAGE"
+	[ -n "$ERROR_STAGE" ] && core_progress_log "error" "stage=$ERROR_STAGE"
+	[ -n "$ERROR_DETAIL" ] && core_progress_log "error" "$ERROR_DETAIL"
+	json_detailed_error "$ERROR_CODE" "$ERROR_MESSAGE" "$ERROR_STAGE" "$ERROR_DETAIL"
 	return 1
 }
 
@@ -1189,19 +1438,22 @@ install_uploaded_core_from_unpack() {
 	SERVICE_RESTART="not_requested"
 
 	if [ ! -f "$UNPACK_DIR/oxidns" ]; then
-		upload_core_error "uploaded_core_invalid" "uploaded archive does not contain an oxidns binary"
+		upload_core_error "uploaded_core_invalid" "uploaded archive does not contain an oxidns binary" "validate_uploaded_core" "expected file: oxidns"
 		return 1
 	fi
+	core_progress_command "validate uploaded oxidns binary"
 	if ! validate_uploaded_binary "$UNPACK_DIR/oxidns"; then
-		upload_core_error "uploaded_core_invalid" "uploaded oxidns binary cannot report build-info"
+		upload_core_error "uploaded_core_invalid" "uploaded oxidns binary cannot report build-info" "validate_uploaded_core" "the uploaded binary either is not executable for this target or build-info failed"
 		return 1
 	fi
+	core_progress_log "success" "uploaded binary passed validation"
 
 	CONFIG_TMP=""
 	if [ ! -e "$CONFIG_PATH" ] && [ -f "$UNPACK_DIR/config.yaml" ]; then
 		CONFIG_TMP="$CORE_TMP_DIR/config.yaml.openwrt"
+		core_progress_command "adapt uploaded config.yaml for OpenWrt defaults"
 		if ! write_openwrt_default_config "$UNPACK_DIR/config.yaml" "$CONFIG_TMP"; then
-			upload_core_error "default_config_unsupported" "uploaded config.yaml cannot be adapted for OpenWrt defaults"
+			upload_core_error "default_config_unsupported" "uploaded config.yaml cannot be adapted for OpenWrt defaults" "install_files" "config=$UNPACK_DIR/config.yaml"
 			return 1
 		fi
 	fi
@@ -1210,15 +1462,18 @@ install_uploaded_core_from_unpack() {
 	if service_running; then SERVICE_WAS_RUNNING=1; fi
 	INIT="$(init_script)"
 	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
+		core_progress_command "$INIT stop"
 		"$INIT" stop >/dev/null 2>&1 || true
 	fi
 
+	core_progress_command "install -m 755 $UNPACK_DIR/oxidns $OXIDNS_BIN"
 	mkdir -p "$(dirname "$OXIDNS_BIN")" "$WORKING_DIR"
 	cp "$UNPACK_DIR/oxidns" "$CORE_TMP_DIR/oxidns.new"
 	chmod 755 "$CORE_TMP_DIR/oxidns.new"
 	mv "$CORE_TMP_DIR/oxidns.new" "$OXIDNS_BIN"
 
 	if [ -d "$UNPACK_DIR/webui" ]; then
+		core_progress_command "copy webui files to $WEBUI_DIR"
 		WEBUI_TMP="$CORE_TMP_DIR/webui.new"
 		rm -rf "$WEBUI_TMP"
 		mkdir -p "$(dirname "$WEBUI_DIR")" "$WEBUI_TMP"
@@ -1229,30 +1484,38 @@ install_uploaded_core_from_unpack() {
 	fi
 
 	if [ -n "$CONFIG_TMP" ]; then
+		core_progress_command "install default config to $CONFIG_PATH"
 		mkdir -p "$(dirname "$CONFIG_PATH")"
 		mv "$CONFIG_TMP" "$CONFIG_PATH"
 	elif [ -f "$UNPACK_DIR/config.yaml" ]; then
+		core_progress_command "copy config example to $WORKING_DIR/config.yaml.example"
 		cp "$UNPACK_DIR/config.yaml" "$WORKING_DIR/config.yaml.example" 2>/dev/null || true
 	fi
 
 	if [ -e "$CONFIG_PATH" ]; then
+		core_progress_command "$OXIDNS_BIN check -c $CONFIG_PATH -d $WORKING_DIR"
 		if CONFIG_CHECK_OUTPUT="$(validate_config_file "$CONFIG_PATH" 2>&1)"; then
 			CONFIG_CHECK_OK=1
+			core_progress_log "success" "$CONFIG_CHECK_OUTPUT"
 		else
 			CONFIG_CHECK_OUTPUT="${CONFIG_CHECK_OUTPUT:-configuration check failed}"
+			core_progress_log "error" "$CONFIG_CHECK_OUTPUT"
 		fi
 	else
 		CONFIG_CHECK_OUTPUT="configuration file is not installed"
+		core_progress_log "error" "$CONFIG_CHECK_OUTPUT"
 	fi
 
 	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
 		SERVICE_OUT="$(mktemp "$TMP_ROOT/oxidns-service.XXXXXX")"
+		core_progress_command "$INIT start"
 		if "$INIT" start >"$SERVICE_OUT" 2>&1; then
 			SERVICE_RESTART="requested"
+			core_progress_log "success" "service restarted"
 		else
-			MSG="$(cat "$SERVICE_OUT" 2>/dev/null || true)"
+			MSG="$(read_error_detail_file "$SERVICE_OUT" 2>/dev/null || true)"
 			rm -f "$SERVICE_OUT"
-			upload_core_error "service_restart_failed" "core installed, but service restart failed: ${MSG:-service restart failed}"
+			upload_core_error "service_restart_failed" "core installed, but service restart failed" "restart_service" "${MSG:-service restart failed}"
 			return 1
 		fi
 		rm -f "$SERVICE_OUT"
@@ -1263,6 +1526,7 @@ install_uploaded_core_from_unpack() {
 	BUNDLE="$(json_value_from_string bundle "$BUILD_JSON")"
 	rm -f "$UPLOAD_PATH"
 	rm -rf "$CORE_TMP_DIR"
+	core_progress_log "success" "uploaded core installed: version=${VERSION:-unknown} bundle=${BUNDLE:-unknown}"
 	printf '{"ok":true,"action":"upload_install","kind":'
 	json_string "$UPLOAD_KIND"
 	printf ',"version":'
@@ -1286,11 +1550,14 @@ install_uploaded_core_from_unpack() {
 
 emit_core_upload_install() {
 	load_settings
+	core_progress_reset "install uploaded OxiDNS core"
 	INPUT="$(cat)"
 	UPLOAD_PATH="$(input_value path "$INPUT")"
+	core_progress_log "info" "uploaded_path=${UPLOAD_PATH:-missing}"
 
 	if ! valid_upload_path "$UPLOAD_PATH" || [ ! -f "$UPLOAD_PATH" ]; then
-		json_error "invalid_upload_path" "uploaded file must be a readable /tmp/oxidns-core-upload-* file"
+		core_progress_log "error" "invalid upload path"
+		json_detailed_error "invalid_upload_path" "uploaded file must be a readable /tmp/oxidns-core-upload-* file" "validate_uploaded_core" "path=${UPLOAD_PATH:-missing}"
 		return 1
 	fi
 
@@ -1298,32 +1565,45 @@ emit_core_upload_install() {
 	UNPACK_DIR="$CORE_TMP_DIR/unpack"
 	mkdir -p "$UNPACK_DIR"
 
+	core_progress_command "tar -tzf $UPLOAD_PATH"
 	if tar -tzf "$UPLOAD_PATH" >/dev/null 2>&1; then
 		if ! validate_safe_archive "$UPLOAD_PATH"; then
-			upload_core_error "uploaded_archive_unsafe" "uploaded archive contains unsafe paths or links"
+			upload_core_error "uploaded_archive_unsafe" "uploaded archive contains unsafe paths or links" "validate_archive" "archive=$UPLOAD_PATH"
 			return 1
 		fi
-		if ! tar -xzf "$UPLOAD_PATH" -C "$UNPACK_DIR"; then
-			upload_core_error "uploaded_archive_unpack_failed" "failed to unpack uploaded OxiDNS archive"
+		TAR_OUT="$(mktemp "$TMP_ROOT/oxidns-upload-tar.XXXXXX")"
+		core_progress_command "tar -xzf $UPLOAD_PATH -C $UNPACK_DIR"
+		if ! tar -xzf "$UPLOAD_PATH" -C "$UNPACK_DIR" >"$TAR_OUT" 2>&1; then
+			TAR_DETAIL="$(read_error_detail_file "$TAR_OUT" 2>/dev/null || true)"
+			rm -f "$TAR_OUT"
+			upload_core_error "uploaded_archive_unpack_failed" "failed to unpack uploaded OxiDNS archive" "unpack_archive" "${TAR_DETAIL:-tar extraction failed}"
 			return 1
 		fi
+		rm -f "$TAR_OUT"
 		install_uploaded_core_from_unpack "archive" "$UNPACK_DIR"
 		return $?
 	fi
 
+	core_progress_command "cp $UPLOAD_PATH $UNPACK_DIR/oxidns"
 	cp "$UPLOAD_PATH" "$UNPACK_DIR/oxidns"
 	install_uploaded_core_from_unpack "binary" "$UNPACK_DIR"
 }
 
 emit_core_remove() {
 	load_settings
+	core_progress_reset "remove OxiDNS core"
 	INIT="$(init_script)"
 	if [ -x "$INIT" ]; then
+		core_progress_command "$INIT stop"
 		"$INIT" stop >/dev/null 2>&1 || true
+		core_progress_command "$INIT disable"
 		"$INIT" disable >/dev/null 2>&1 || true
 	fi
+	core_progress_command "rm -f $OXIDNS_BIN"
 	rm -f "$OXIDNS_BIN"
+	core_progress_command "rm -rf $WEBUI_DIR"
 	rm -rf "$WEBUI_DIR"
+	core_progress_log "success" "core removed"
 	printf '{"ok":true,"action":"remove","binary_path":'
 	json_string "$OXIDNS_BIN"
 	printf ',"webui_path":'
@@ -1338,6 +1618,7 @@ case "${1:-}" in
 		printf '"core_install":{},'
 		printf '"core_reinstall":{},'
 		printf '"core_upload_install":{"path":"string"},'
+		printf '"core_progress":{},'
 		printf '"core_remove":{},'
 		printf '"service_start":{},'
 		printf '"service_stop":{},'
@@ -1365,6 +1646,9 @@ case "${1:-}" in
 				;;
 			core_upload_install)
 				emit_core_upload_install
+				;;
+			core_progress)
+				emit_core_progress
 				;;
 			core_remove)
 				emit_core_remove

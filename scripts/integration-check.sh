@@ -64,8 +64,9 @@ assert_unsafe_upload_rejected() {
 
 scripts/check.sh
 
-root/usr/libexec/rpcd/luci.oxidns list | json_ok "'status' in v && 'core_install' in v && 'core_reinstall' in v && 'core_upload_install' in v && 'core_remove' in v && 'logs_recent' in v && 'settings_read' in v && !('config_basic_read' in v) && !('config_basic_save' in v)"
+root/usr/libexec/rpcd/luci.oxidns list | json_ok "'status' in v && 'core_install' in v && 'core_reinstall' in v && 'core_upload_install' in v && 'core_progress' in v && 'core_remove' in v && 'logs_recent' in v && 'settings_read' in v && !('config_basic_read' in v) && !('config_basic_save' in v)"
 root/usr/libexec/rpcd/luci.oxidns call status | json_ok "v.ok === true && v.core && v.core.installed === false && v.webui && v.webui.installed === false && typeof v.webui.url === 'string' && typeof v.webui.local_only === 'boolean' && typeof v.webui.wildcard === 'boolean' && !('api' in v) && !('api_base_url' in v) && !('package' in v) && !('package_manager' in v)"
+root/usr/libexec/rpcd/luci.oxidns call core_progress | json_ok "v.ok === true && typeof v.text === 'string'"
 root/usr/libexec/rpcd/luci.oxidns call core_reinstall | json_ok "v.ok === false && v.code === 'core_not_installed'"
 printf '%s' '{"path":"/etc/passwd"}' | root/usr/libexec/rpcd/luci.oxidns call core_upload_install | json_ok "v.ok === false && v.code === 'invalid_upload_path'"
 UNSAFE_UPLOAD="$(mktemp "/tmp/oxidns-core-upload-unsafe.XXXXXX")"
