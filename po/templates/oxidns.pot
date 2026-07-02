@@ -32,6 +32,12 @@ msgstr ""
 msgid "Clear"
 msgstr ""
 
+msgid "Close"
+msgstr ""
+
+msgid "Command output"
+msgstr ""
+
 msgid "Config path"
 msgstr ""
 
@@ -68,6 +74,12 @@ msgstr ""
 msgid "Download proxy"
 msgstr ""
 
+msgid "Download core archive"
+msgstr ""
+
+msgid "Download release metadata"
+msgstr ""
+
 msgid "Edit, validate, and save the full OxiDNS YAML configuration file."
 msgstr ""
 
@@ -77,6 +89,9 @@ msgstr ""
 msgid "Error"
 msgstr ""
 
+msgid "Error code"
+msgstr ""
+
 msgid "Failed to save settings"
 msgstr ""
 
@@ -84,6 +99,9 @@ msgid "GitHub token"
 msgstr ""
 
 msgid "Install Core"
+msgstr ""
+
+msgid "Install core files"
 msgstr ""
 
 msgid "Install or repair the OxiDNS core binary. Runtime upgrades are handled by OxiDNS itself."
@@ -164,6 +182,12 @@ msgstr ""
 msgid "Pause"
 msgstr ""
 
+msgid "Prepare download"
+msgstr ""
+
+msgid "Reason"
+msgstr ""
+
 msgid "Refresh"
 msgstr ""
 
@@ -183,6 +207,9 @@ msgid "Repair reinstalling OxiDNS core..."
 msgstr ""
 
 msgid "Restart"
+msgstr ""
+
+msgid "Restart service"
 msgstr ""
 
 msgid "Resume"
@@ -227,6 +254,12 @@ msgstr ""
 msgid "Settings saved."
 msgstr ""
 
+msgid "Select release archive"
+msgstr ""
+
+msgid "Stage"
+msgstr ""
+
 msgid "Start"
 msgstr ""
 
@@ -245,6 +278,9 @@ msgstr ""
 msgid "Target"
 msgstr ""
 
+msgid "Details"
+msgstr ""
+
 msgid "Unable to query OxiDNS status"
 msgstr ""
 
@@ -260,7 +296,22 @@ msgstr ""
 msgid "Validate"
 msgstr ""
 
+msgid "Validate core archive"
+msgstr ""
+
+msgid "Validate uploaded core"
+msgstr ""
+
 msgid "Validating configuration..."
+msgstr ""
+
+msgid "Unpack core archive"
+msgstr ""
+
+msgid "Verify checksum"
+msgstr ""
+
+msgid "Verify release digest"
 msgstr ""
 
 msgid "Version"
@@ -276,6 +327,9 @@ msgid "WebUI files are not installed."
 msgstr ""
 
 msgid "WebUI listens on loopback only. Configure the HTTP listen address to a LAN-reachable address, or use an SSH tunnel."
+msgstr ""
+
+msgid "Waiting for command output..."
 msgstr ""
 
 msgid "Working directory"

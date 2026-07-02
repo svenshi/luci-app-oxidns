@@ -28,6 +28,12 @@ var callCoreUploadInstall = rpc.declare({
 	expect: {}
 });
 
+var callCoreProgress = rpc.declare({
+	object: 'luci.oxidns',
+	method: 'core_progress',
+	expect: {}
+});
+
 var callCoreRemove = rpc.declare({
 	object: 'luci.oxidns',
 	method: 'core_remove',
@@ -107,23 +113,196 @@ function callWithRpcTimeout(call, seconds) {
 	});
 }
 
-function runCoreAction(label, call, timeout) {
+function coreErrorStageLabel(stage) {
+	var labels = {
+		prepare_download: _('Prepare download'),
+		download_metadata: _('Download release metadata'),
+		select_release_asset: _('Select release archive'),
+		verify_release_digest: _('Verify release digest'),
+		download_archive: _('Download core archive'),
+		verify_checksum: _('Verify checksum'),
+		validate_archive: _('Validate core archive'),
+		unpack_archive: _('Unpack core archive'),
+		install_files: _('Install core files'),
+		restart_service: _('Restart service'),
+		validate_uploaded_core: _('Validate uploaded core')
+	};
+
+	return labels[stage] || stage || '-';
+}
+
+function errorDetailLine(label, value, extraClass) {
+	if (value === null || value === undefined || value === '')
+		return null;
+
+	return E('div', { 'class': extraClass || '' }, [
+		E('strong', {}, [ label + ': ' ]),
+		value
+	]);
+}
+
+function renderCoreError(result) {
+	var message = (result && (result.message || result.error)) || _('Core operation failed');
+	var detail = result && (result.detail || result.details);
+	var children = [
+		E('p', {}, E('strong', {}, _('Core operation failed')))
+	];
+
+	if (result && result.stage)
+		children.push(errorDetailLine(_('Stage'), coreErrorStageLabel(result.stage)));
+	children.push(errorDetailLine(_('Reason'), message));
+	if (detail)
+		children.push(errorDetailLine(_('Details'), detail, 'small'));
+	if (result && result.code)
+		children.push(errorDetailLine(_('Error code'), result.code, 'small'));
+
+	return E('div', {}, children);
+}
+
+function replaceContent(node, content) {
+	if (!node)
+		return;
+
+	while (node.firstChild)
+		node.removeChild(node.firstChild);
+
+	if (content === null || content === undefined)
+		return;
+
+	if (Array.isArray(content)) {
+		for (var i = 0; i < content.length; i++)
+			node.appendChild(content[i]);
+	} else if (content.nodeType) {
+		node.appendChild(content);
+	} else {
+		node.textContent = String(content);
+	}
+}
+
+function scrollProgressLog(logNode) {
+	if (logNode)
+		logNode.scrollTop = logNode.scrollHeight;
+}
+
+function showCoreProgressModal(label) {
+	var statusNode = E('p', { 'id': 'oxidns-core-progress-status' }, label);
+	var logNode = E('pre', {
+		'id': 'oxidns-core-progress-log',
+		'style': [
+			'box-sizing: border-box',
+			'width: 100%',
+			'min-height: 18em',
+			'max-height: 44vh',
+			'overflow: auto',
+			'padding: 1em',
+			'border: 1px solid #ccc',
+			'background: #111',
+			'color: #eee',
+			'white-space: pre-wrap',
+			'font-family: monospace',
+			'font-size: 12px',
+			'line-height: 1.45'
+		].join(';')
+	}, _('Waiting for command output...'));
+	var resultNode = E('div', { 'id': 'oxidns-core-progress-result' });
+	var closeButton = E('button', {
+		'class': 'btn cbi-button cbi-button-neutral',
+		'disabled': 'disabled',
+		'click': function(ev) {
+			ev.preventDefault();
+			ui.hideModal();
+		}
+	}, _('Close'));
+
 	ui.showModal(_('OxiDNS'), [
-		E('p', {}, label)
+		statusNode,
+		E('div', { 'class': 'cbi-value-title', 'style': 'margin-bottom: .35em;' }, _('Command output')),
+		logNode,
+		resultNode,
+		E('div', { 'class': 'right', 'style': 'margin-top: 1em;' }, closeButton)
 	]);
 
-	return L.resolveDefault(callWithRpcTimeout(call, timeout), null).then(function(result) {
-		ui.hideModal();
-		if (!result || result.ok === false) {
-			ui.addNotification(null, E('p', {}, (result && (result.message || result.error)) || _('Core operation failed')), 'danger');
+	return {
+		status: statusNode,
+		log: logNode,
+		result: resultNode,
+		closeButton: closeButton
+	};
+}
+
+function setCoreProgressFinished(nodes, statusText, resultContent) {
+	if (nodes && nodes.status)
+		nodes.status.textContent = statusText;
+	if (nodes && nodes.result)
+		replaceContent(nodes.result, resultContent);
+	if (nodes && nodes.closeButton) {
+		nodes.closeButton.disabled = false;
+		nodes.closeButton.removeAttribute('disabled');
+	}
+}
+
+function refreshCoreProgressLog(logNode) {
+	return L.resolveDefault(callCoreProgress(), null).then(function(result) {
+		if (!result || result.ok === false)
 			return;
+
+		logNode.textContent = result.text || _('Waiting for command output...');
+		scrollProgressLog(logNode);
+	});
+}
+
+function startCoreProgressPolling(logNode) {
+	var timer = null;
+	var stopped = false;
+
+	var tick = function() {
+		if (stopped)
+			return Promise.resolve();
+		return refreshCoreProgressLog(logNode);
+	};
+
+	timer = window.setInterval(tick, 1000);
+	window.setTimeout(tick, 500);
+
+	return {
+		stop: function() {
+			stopped = true;
+			if (timer !== null)
+				window.clearInterval(timer);
+		},
+		refresh: function() {
+			return refreshCoreProgressLog(logNode);
 		}
-		return refreshStatus().then(function() {
-			ui.addNotification(null, E('p', {}, _('Core operation completed.')), 'info');
+	};
+}
+
+function runCoreAction(label, call, timeout) {
+	var nodes = showCoreProgressModal(label);
+	var progress = startCoreProgressPolling(nodes.log);
+
+	return L.resolveDefault(callWithRpcTimeout(call, timeout), null).then(function(result) {
+		progress.stop();
+		if (!result || result.ok === false) {
+			return progress.refresh().then(function() {
+				setCoreProgressFinished(nodes, _('Core operation failed'), renderCoreError(result || {}));
+			});
+		}
+
+		return progress.refresh().then(function() {
+			return L.resolveDefault(refreshStatus(), null).then(function() {
+				setCoreProgressFinished(nodes, _('Core operation completed.'), E('p', {}, _('Core operation completed.')));
+				ui.addNotification(null, E('p', {}, _('Core operation completed.')), 'info');
+			});
 		});
 	}).catch(function(err) {
-		ui.hideModal();
-		ui.addNotification(null, E('p', {}, err.message || String(err)), 'danger');
+		progress.stop();
+		return progress.refresh().then(function() {
+			var errorResult = {
+				message: (err && err.message) || String(err)
+			};
+			ui.addNotification(null, renderCoreError(errorResult), 'danger');
+			setCoreProgressFinished(nodes, _('Core operation failed'), renderCoreError(errorResult));
+		});
 	});
 }
 

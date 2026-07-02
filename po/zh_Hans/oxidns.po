@@ -34,6 +34,12 @@ msgstr "Bundle"
 msgid "Clear"
 msgstr "清空"
 
+msgid "Close"
+msgstr "关闭"
+
+msgid "Command output"
+msgstr "命令输出"
+
 msgid "Config path"
 msgstr "配置路径"
 
@@ -70,6 +76,12 @@ msgstr "禁用"
 msgid "Download proxy"
 msgstr "下载代理"
 
+msgid "Download core archive"
+msgstr "下载内核压缩包"
+
+msgid "Download release metadata"
+msgstr "下载 release 元数据"
+
 msgid "Edit, validate, and save the full OxiDNS YAML configuration file."
 msgstr "编辑、校验并保存完整的 OxiDNS YAML 配置文件。"
 
@@ -79,6 +91,9 @@ msgstr "启用"
 msgid "Error"
 msgstr "错误"
 
+msgid "Error code"
+msgstr "错误码"
+
 msgid "Failed to save settings"
 msgstr "保存设置失败"
 
@@ -87,6 +102,9 @@ msgstr "GitHub Token"
 
 msgid "Install Core"
 msgstr "安装内核"
+
+msgid "Install core files"
+msgstr "安装内核文件"
 
 msgid "Install the OxiDNS core before using service controls."
 msgstr "请先安装 OxiDNS 内核，再使用服务控制。"
@@ -169,6 +187,12 @@ msgstr "路径"
 msgid "Pause"
 msgstr "暂停"
 
+msgid "Prepare download"
+msgstr "准备下载"
+
+msgid "Reason"
+msgstr "原因"
+
 msgid "Refresh"
 msgstr "刷新"
 
@@ -189,6 +213,9 @@ msgstr "正在修复重装 OxiDNS 内核..."
 
 msgid "Restart"
 msgstr "重启"
+
+msgid "Restart service"
+msgstr "重启服务"
 
 msgid "Resume"
 msgstr "继续"
@@ -232,6 +259,12 @@ msgstr "设置"
 msgid "Settings saved."
 msgstr "设置已保存。"
 
+msgid "Select release archive"
+msgstr "选择 release 压缩包"
+
+msgid "Stage"
+msgstr "阶段"
+
 msgid "Start"
 msgstr "启动"
 
@@ -249,6 +282,9 @@ msgstr "已停止"
 
 msgid "Target"
 msgstr "目标架构"
+
+msgid "Details"
+msgstr "详情"
 
 msgid "Unable to query OxiDNS status"
 msgstr "无法查询 OxiDNS 状态"
@@ -268,8 +304,23 @@ msgstr "上传内核"
 msgid "Validate"
 msgstr "校验"
 
+msgid "Validate core archive"
+msgstr "校验内核压缩包"
+
+msgid "Validate uploaded core"
+msgstr "校验上传的内核"
+
 msgid "Validating configuration..."
 msgstr "正在校验配置..."
+
+msgid "Unpack core archive"
+msgstr "解压内核压缩包"
+
+msgid "Verify checksum"
+msgstr "校验 checksum"
+
+msgid "Verify release digest"
+msgstr "校验 release 摘要"
 
 msgid "Version"
 msgstr "版本"
@@ -285,6 +336,9 @@ msgstr "WebUI 文件尚未安装。"
 
 msgid "WebUI listens on loopback only. Configure the HTTP listen address to a LAN-reachable address, or use an SSH tunnel."
 msgstr "WebUI 仅监听 loopback。请把 HTTP 监听地址配置为局域网可访问地址，或使用 SSH 隧道。"
+
+msgid "Waiting for command output..."
+msgstr "正在等待命令输出..."
 
 msgid "Working directory"
 msgstr "工作目录"
