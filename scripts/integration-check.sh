@@ -27,6 +27,40 @@ apk_data_has_checksum() {
 	gzip -dc "$1" | grep -q 'APK-TOOLS.checksum.SHA1='
 }
 
+ipk_has_member() {
+	ar -t "$1" | awk -v member="$2" '
+		$0 == member { found = 1 }
+		END { exit found ? 0 : 1 }
+	'
+}
+
+ipk_nested_has_member() {
+	outer="$1"
+	inner="$2"
+	member="$3"
+	nested="$(mktemp "${TMPDIR:-/tmp}/luci-app-oxidns-nested.XXXXXX")"
+	if ! ar -p "$outer" "$inner" > "$nested" 2>/dev/null; then
+		rm -f "$nested"
+		return 1
+	fi
+
+	if tar -tzf "$nested" | awk -v member="$member" '
+		{
+			path = $0;
+			sub(/^\.\//, "", path);
+			if (path == member)
+				found = 1;
+		}
+		END { exit found ? 0 : 1 }
+	'; then
+		rm -f "$nested"
+		return 0
+	fi
+
+	rm -f "$nested"
+	return 1
+}
+
 tar_nested_has_member() {
 	outer="$1"
 	inner="$2"
@@ -66,6 +100,25 @@ scripts/check.sh
 
 root/usr/libexec/rpcd/luci.oxidns list | json_ok "'status' in v && 'core_install' in v && 'core_reinstall' in v && 'core_upload_install' in v && 'core_progress' in v && 'core_remove' in v && 'logs_recent' in v && 'settings_read' in v && !('config_basic_read' in v) && !('config_basic_save' in v)"
 root/usr/libexec/rpcd/luci.oxidns call status | json_ok "v.ok === true && v.core && v.core.installed === false && v.webui && v.webui.installed === false && typeof v.webui.url === 'string' && typeof v.webui.local_only === 'boolean' && typeof v.webui.wildcard === 'boolean' && !('api' in v) && !('api_base_url' in v) && !('package' in v) && !('package_manager' in v)"
+TARGET_FAKE_BIN="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-target-fake-bin.XXXXXX")"
+TARGET_CASES="$(mktemp "${TMPDIR:-/tmp}/oxidns-target-cases.XXXXXX")"
+cat > "$TARGET_FAKE_BIN/uname" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = "-m" ]; then
+	printf '%s\n' "${FAKE_UNAME_M:?}"
+	exit 0
+fi
+exec /usr/bin/uname "$@"
+EOF
+chmod 755 "$TARGET_FAKE_BIN/uname"
+node -e "const data=JSON.parse(require('fs').readFileSync('root/usr/share/oxidns/targets.json','utf8')); for (const target of data.targets) for (const arch of target.uname_arches) console.log(arch + ' ' + target.rust_target);" > "$TARGET_CASES"
+while read -r TARGET_ARCH TARGET_RUST; do
+	PATH="$TARGET_FAKE_BIN:$PATH" FAKE_UNAME_M="$TARGET_ARCH" OXIDNS_TARGETS_FILE="$PWD/root/usr/share/oxidns/targets.json" \
+		root/usr/libexec/rpcd/luci.oxidns call status |
+		json_ok "v.ok === true && v.core && v.core.target === '$TARGET_RUST'"
+done < "$TARGET_CASES"
+rm -rf "$TARGET_FAKE_BIN"
+rm -f "$TARGET_CASES"
 root/usr/libexec/rpcd/luci.oxidns call core_progress | json_ok "v.ok === true && typeof v.text === 'string'"
 root/usr/libexec/rpcd/luci.oxidns call core_reinstall | json_ok "v.ok === false && v.code === 'core_not_installed'"
 printf '%s' '{"path":"/etc/passwd"}' | root/usr/libexec/rpcd/luci.oxidns call core_upload_install | json_ok "v.ok === false && v.code === 'invalid_upload_path'"
@@ -138,23 +191,45 @@ case "$CMD" in
 		;;
 esac
 EOF
-chmod 755 "$FAKE_UCI_DIR/uci"
-printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"","github_token":""}' |
-	PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
-	json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.config_path === '/etc/oxidns/config.yaml' && v.working_dir === '/var/lib/oxidns'"
-rm -rf "$FAKE_UCI_DIR"
+	chmod 755 "$FAKE_UCI_DIR/uci"
+	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"","github_token":""}' |
+		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
+		json_ok "v.ok === false && v.code === 'invalid_config_path'"
+	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var","download_proxy":"","github_token":""}' |
+		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
+		json_ok "v.ok === false && v.code === 'invalid_working_dir'"
+	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"","github_token":""}' |
+		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
+		json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.config_path === '/etc/oxidns/config.yaml' && v.working_dir === '/var/lib/oxidns'"
+	cat > "$FAKE_UCI_STATE" <<'EOF'
+oxidns.main.core_repository=svenshi/oxidns
+oxidns.main.core_bundle=full
+oxidns.main.config_path=/etc/oxidns/config.yaml
+oxidns.main.working_dir=/var
+oxidns.main.download_proxy=
+oxidns.main.github_token=
+EOF
+	REMOVE_PREFLIGHT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-remove-preflight.XXXXXX")"
+	printf '%s' '{"remove_workdir":"true"}' |
+		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" TMPDIR="$REMOVE_PREFLIGHT_DIR" root/usr/libexec/rpcd/luci.oxidns call core_remove |
+		json_ok "v.ok === false && v.code === 'unsafe_working_dir'"
+	test -f "$REMOVE_PREFLIGHT_DIR/luci-oxidns/core-progress.log"
+	! grep -q 'rm -f /usr/bin/oxidns' "$REMOVE_PREFLIGHT_DIR/luci-oxidns/core-progress.log"
+	! grep -q 'rm -rf /usr/share/oxidns/webui' "$REMOVE_PREFLIGHT_DIR/luci-oxidns/core-progress.log"
+	rm -rf "$REMOVE_PREFLIGHT_DIR"
+	rm -rf "$FAKE_UCI_DIR"
 printf '%s' '{"limit":"20"}' | root/usr/libexec/rpcd/luci.oxidns call logs_recent | json_ok "v.ok === true && v.source === 'logread' && Array.isArray(v.lines) && !('entries' in v)"
 
 DIST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/luci-app-oxidns-dist.XXXXXX")"
 scripts/build-luci-package.sh 0.1.0 "$DIST_DIR" >/dev/null
-tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" debian-binary
-tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz
-tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz
-tar_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz postinst
-tar_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz postrm
-tar_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz etc/init.d/oxidns
-tar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" data.tar.gz
-tar_nested_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" control.tar.gz postinst
+ipk_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" debian-binary
+ipk_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz
+ipk_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz
+ipk_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz postinst
+ipk_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" control.tar.gz postrm
+ipk_nested_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.ipk" data.tar.gz etc/init.d/oxidns
+ipk_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" data.tar.gz
+ipk_nested_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" control.tar.gz postinst
 tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .PKGINFO
 tar_member_contains "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .PKGINFO '^arch = noarch$'
 tar_member_contains "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .PKGINFO '^datahash = [0-9a-f][0-9a-f]*$'

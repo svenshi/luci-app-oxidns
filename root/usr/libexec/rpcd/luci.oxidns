@@ -6,6 +6,7 @@ UCI_PACKAGE="oxidns"
 UCI_SECTION="main"
 OXIDNS_BIN="/usr/bin/oxidns"
 WEBUI_DIR="/usr/share/oxidns/webui"
+TARGETS_FILE="${OXIDNS_TARGETS_FILE:-/usr/share/oxidns/targets.json}"
 DEFAULT_CONFIG_PATH="/etc/oxidns/config.yaml"
 DEFAULT_WORKING_DIR="/var/lib/oxidns"
 DEFAULT_SERVICE_NAME="oxidns"
@@ -336,28 +337,40 @@ json_value_from_string() {
 	fi
 }
 
+detect_rust_target_from_file() {
+	TARGET_FILE="$1"
+	ARCH="$2"
+	[ -r "$TARGET_FILE" ] || return 1
+	awk -v arch="$ARCH" '
+		function field_value(line,    value) {
+			value = line;
+			sub(/^.*:[[:space:]]*"/, "", value);
+			sub(/".*$/, "", value);
+			return value;
+		}
+		/"rust_target"[[:space:]]*:/ {
+			target = field_value($0);
+			next;
+		}
+		target != "" && (/"uname_arches"[[:space:]]*:/ || /"aliases"[[:space:]]*:/) {
+			line = $0;
+			gsub(/[\[\],"]/, " ", line);
+			n = split(line, parts, /[[:space:]]+/);
+			for (i = 1; i <= n; i++) {
+				if (parts[i] == arch) {
+					print target;
+					found = 1;
+					exit;
+				}
+			}
+		}
+		END { exit found ? 0 : 1 }
+	' "$TARGET_FILE"
+}
+
 detect_rust_target() {
 	ARCH="$(uname -m 2>/dev/null || printf unknown)"
-	case "$ARCH" in
-		x86_64|amd64)
-			printf 'x86_64-unknown-linux-musl'
-			;;
-		aarch64|arm64)
-			printf 'aarch64-unknown-linux-musl'
-			;;
-		i386|i686)
-			printf 'i686-unknown-linux-musl'
-			;;
-		armv7l|armv7)
-			printf 'armv7-unknown-linux-musleabihf'
-			;;
-		armv6l|armv6)
-			printf 'arm-unknown-linux-musleabihf'
-			;;
-		*)
-			return 1
-			;;
-	esac
+	detect_rust_target_from_file "$TARGETS_FILE" "$ARCH"
 }
 
 emit_status() {
@@ -571,6 +584,14 @@ emit_settings_save() {
 			return 1
 			;;
 	esac
+	if ! valid_config_path_setting "$CONFIG_VALUE"; then
+		json_error "invalid_config_path" "config_path must be an absolute OxiDNS-related file path"
+		return 1
+	fi
+	if ! valid_working_dir_setting "$WORKING_VALUE"; then
+		json_error "invalid_working_dir" "working_dir must be an absolute OxiDNS-related directory path"
+		return 1
+	fi
 
 	uci -q set oxidns.main=settings
 	uci -q set "oxidns.main.core_repository=$REPOSITORY_VALUE"
@@ -680,6 +701,27 @@ safe_remove_working_dir() {
 			;;
 	esac
 	oxidns_named_path "$PATH_VALUE"
+}
+
+path_has_parent_ref() {
+	case "$1" in
+		..|../*|*/..|*/../*)
+			return 0
+			;;
+	esac
+	return 1
+}
+
+valid_config_path_setting() {
+	PATH_VALUE="$1"
+	path_has_parent_ref "$PATH_VALUE" && return 1
+	safe_remove_config_path "$PATH_VALUE"
+}
+
+valid_working_dir_setting() {
+	PATH_VALUE="$1"
+	path_has_parent_ref "$PATH_VALUE" && return 1
+	safe_remove_working_dir "$PATH_VALUE"
 }
 
 validate_config_file() {
@@ -1711,20 +1753,20 @@ emit_core_remove() {
 	core_progress_reset "remove OxiDNS core"
 	REMOVE_CONFIG="$(input_bool remove_config "$INPUT")"
 	REMOVE_WORKDIR="$(input_bool remove_workdir "$INPUT")"
-	INIT="$(init_script)"
-	if [ -x "$INIT" ]; then
-		core_progress_command "$INIT stop"
-		"$INIT" stop >/dev/null 2>&1 || true
-		core_progress_command "$INIT disable"
-		"$INIT" disable >/dev/null 2>&1 || true
-	fi
-	core_progress_command "rm -f $OXIDNS_BIN"
-	rm -f "$OXIDNS_BIN"
-	core_progress_command "rm -rf $WEBUI_DIR"
-	rm -rf "$WEBUI_DIR"
 	CONFIG_REMOVED=0
 	WORKDIR_REMOVED=0
 	CONFIG_BACKUP=""
+
+	if [ "$REMOVE_CONFIG" = "1" ] && ! safe_remove_config_path "$CONFIG_PATH"; then
+		core_progress_log "error" "refusing unsafe config path: $CONFIG_PATH"
+		json_detailed_error "unsafe_config_path" "refusing to delete unsafe configuration path" "remove_config" "config=$CONFIG_PATH"
+		return 1
+	fi
+	if [ "$REMOVE_WORKDIR" = "1" ] && ! safe_remove_working_dir "$WORKING_DIR"; then
+		core_progress_log "error" "refusing unsafe working directory: $WORKING_DIR"
+		json_detailed_error "unsafe_working_dir" "refusing to delete unsafe working directory" "remove_working_dir" "working_dir=$WORKING_DIR"
+		return 1
+	fi
 	if [ "$REMOVE_WORKDIR" = "1" ] && [ "$REMOVE_CONFIG" != "1" ] && path_is_under "$CONFIG_PATH" "$WORKING_DIR" && [ -e "$CONFIG_PATH" ]; then
 		CONFIG_BACKUP="$(mktemp "$TMP_ROOT/oxidns-config-preserve.XXXXXX")"
 		core_progress_command "preserve $CONFIG_PATH before removing $WORKING_DIR"
@@ -1738,23 +1780,25 @@ emit_core_remove() {
 			return 1
 		fi
 	fi
+
+	INIT="$(init_script)"
+	if [ -x "$INIT" ]; then
+		core_progress_command "$INIT stop"
+		"$INIT" stop >/dev/null 2>&1 || true
+		core_progress_command "$INIT disable"
+		"$INIT" disable >/dev/null 2>&1 || true
+	fi
+	core_progress_command "rm -f $OXIDNS_BIN"
+	rm -f "$OXIDNS_BIN"
+	core_progress_command "rm -rf $WEBUI_DIR"
+	rm -rf "$WEBUI_DIR"
+
 	if [ "$REMOVE_CONFIG" = "1" ]; then
-		if ! safe_remove_config_path "$CONFIG_PATH"; then
-			core_progress_log "error" "refusing unsafe config path: $CONFIG_PATH"
-			json_detailed_error "unsafe_config_path" "refusing to delete unsafe configuration path" "remove_config" "config=$CONFIG_PATH"
-			return 1
-		fi
 		core_progress_command "rm -f $CONFIG_PATH"
 		rm -f "$CONFIG_PATH"
 		CONFIG_REMOVED=1
 	fi
 	if [ "$REMOVE_WORKDIR" = "1" ]; then
-		if ! safe_remove_working_dir "$WORKING_DIR"; then
-			rm -f "$CONFIG_BACKUP" 2>/dev/null || true
-			core_progress_log "error" "refusing unsafe working directory: $WORKING_DIR"
-			json_detailed_error "unsafe_working_dir" "refusing to delete unsafe working directory" "remove_working_dir" "working_dir=$WORKING_DIR"
-			return 1
-		fi
 		core_progress_command "rm -rf $WORKING_DIR"
 		rm -rf "$WORKING_DIR"
 		WORKDIR_REMOVED=1
