@@ -88,6 +88,7 @@ function refreshStatus() {
 		setText('oxidns-core-target', core.target);
 		setText('oxidns-core-binary', core.binary_path);
 		setText('oxidns-core-service', serviceRunning(statusState) ? _('Running') : _('Stopped'));
+		refreshActionButtons();
 	});
 }
 
@@ -359,6 +360,12 @@ function actionButtons(status) {
 	];
 }
 
+function refreshActionButtons() {
+	var node = document.getElementById('oxidns-core-actions');
+	if (node)
+		replaceContent(node, actionButtons(statusState));
+}
+
 return view.extend({
 	load: function() {
 		return L.resolveDefault(callStatus(), {});
@@ -389,6 +396,7 @@ return view.extend({
 				E('div', { 'class': 'cbi-section-descr' },
 					_('LuCI can download the official OxiDNS release archive or install an uploaded .tar.gz archive or single oxidns binary. Future upgrades are handled by the OxiDNS core.')),
 				E('div', {
+					'id': 'oxidns-core-actions',
 					'class': 'cbi-button-row',
 					'style': 'display: flex; flex-wrap: wrap; gap: .5em;'
 				}, actionButtons(statusState))
