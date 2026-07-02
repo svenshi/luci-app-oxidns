@@ -11,6 +11,9 @@ msgstr ""
 msgid "A token is currently configured. Enter a new value to replace it."
 msgstr ""
 
+msgid "A download proxy is currently configured. Enter a new value to replace it."
+msgstr ""
+
 msgid "Actions"
 msgstr ""
 
@@ -26,10 +29,19 @@ msgstr ""
 msgid "Build"
 msgstr ""
 
+msgid "Cancel"
+msgstr ""
+
 msgid "Bundle"
 msgstr ""
 
 msgid "Clear"
+msgstr ""
+
+msgid "Clear configured GitHub token"
+msgstr ""
+
+msgid "Clear configured download proxy"
 msgstr ""
 
 msgid "Close"
@@ -44,7 +56,13 @@ msgstr ""
 msgid "Configuration"
 msgstr ""
 
+msgid "Configuration and working directory data are preserved unless selected below."
+msgstr ""
+
 msgid "Configure OxiDNS core download sources, runtime paths, and optional download credentials."
+msgstr ""
+
+msgid "Confirm"
 msgstr ""
 
 msgid "Control the OpenWrt init service for OxiDNS."
@@ -66,6 +84,12 @@ msgid "Core operation failed"
 msgstr ""
 
 msgid "Core repository"
+msgstr ""
+
+msgid "Delete configuration file"
+msgstr ""
+
+msgid "Delete working directory"
 msgstr ""
 
 msgid "Disable"
@@ -110,6 +134,9 @@ msgstr ""
 msgid "Install the OxiDNS core before editing the configuration."
 msgstr ""
 
+msgid "Install the OxiDNS core before using service controls."
+msgstr ""
+
 msgid "Install or repair the OxiDNS core binary. Runtime upgrades are handled by OxiDNS itself."
 msgstr ""
 
@@ -147,6 +174,9 @@ msgid "Operation failed"
 msgstr ""
 
 msgid "Optional. The token is never shown after saving."
+msgstr ""
+
+msgid "Optional. The proxy is never shown after saving."
 msgstr ""
 
 msgid "Open WebUI"
@@ -200,7 +230,10 @@ msgstr ""
 msgid "Remove Core"
 msgstr ""
 
-msgid "Remove the OxiDNS core binary? Configuration and runtime data will be preserved."
+msgid "Remove OxiDNS Core"
+msgstr ""
+
+msgid "Remove the OxiDNS core binary and Web UI files."
 msgstr ""
 
 msgid "Removing OxiDNS core..."
@@ -288,6 +321,9 @@ msgid "Details"
 msgstr ""
 
 msgid "Unable to query OxiDNS status"
+msgstr ""
+
+msgid "Unable to load configuration."
 msgstr ""
 
 msgid "Unavailable"

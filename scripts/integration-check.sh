@@ -122,6 +122,11 @@ rm -f "$TARGET_CASES"
 root/usr/libexec/rpcd/luci.oxidns call core_progress | json_ok "v.ok === true && typeof v.text === 'string'"
 root/usr/libexec/rpcd/luci.oxidns call core_reinstall | json_ok "v.ok === false && v.code === 'core_not_installed'"
 printf '%s' '{"path":"/etc/passwd"}' | root/usr/libexec/rpcd/luci.oxidns call core_upload_install | json_ok "v.ok === false && v.code === 'invalid_upload_path'"
+LOCK_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-lock-test.XXXXXX")"
+mkdir -p "$LOCK_TEST_DIR/luci-oxidns/core-operation.lock"
+printf '%s\n' "$$" > "$LOCK_TEST_DIR/luci-oxidns/core-operation.lock/pid"
+TMPDIR="$LOCK_TEST_DIR" root/usr/libexec/rpcd/luci.oxidns call core_reinstall | json_ok "v.ok === false && v.code === 'core_operation_busy'"
+rm -rf "$LOCK_TEST_DIR"
 node -e "const acl=JSON.parse(require('fs').readFileSync('root/usr/share/rpcd/acl.d/luci-app-oxidns.json','utf8'))['luci-app-oxidns']; const read=acl.read.ubus['luci.oxidns']; const write=acl.write.ubus['luci.oxidns']; if (read.includes('config_validate') || !write.includes('config_validate')) process.exit(1);"
 JSON_ESCAPED="$(printf '%s\n' 'listen: "127.0.0.1:9199"' | awk 'BEGIN { ORS = "" } { if (NR > 1) printf "\\n"; for (i = 1; i <= length($0); i++) { c = substr($0, i, 1); if (c == "\\") printf "\\\\"; else if (c == "\"") printf "\\\""; else if (c == "\t") printf "\\t"; else if (c == "\r") printf "\\r"; else printf "%s", c; } }')"
 test "$JSON_ESCAPED" = 'listen: \"127.0.0.1:9199\"'
@@ -146,7 +151,7 @@ rm -f "$UNSAFE_UPLOAD"
 rm -rf "$UNSAFE_DIR"
 printf '%s' '{"content":""}' | root/usr/libexec/rpcd/luci.oxidns call config_validate | json_ok "v.ok === false && v.code === 'missing_content'"
 root/usr/libexec/rpcd/luci.oxidns call config_read | json_ok "v.ok === false && v.code === 'config_not_found'"
-root/usr/libexec/rpcd/luci.oxidns call settings_read | json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.core_bundle === 'full' && v.github_token_set === false && !('api_base_url' in v)"
+root/usr/libexec/rpcd/luci.oxidns call settings_read | json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.core_bundle === 'full' && v.download_proxy === '' && v.download_proxy_set === false && v.github_token_set === false && !('api_base_url' in v)"
 FAKE_UCI_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-fake-uci.XXXXXX")"
 FAKE_UCI_STATE="$FAKE_UCI_DIR/state"
 cat > "$FAKE_UCI_DIR/uci" <<'EOF'
@@ -200,7 +205,16 @@ EOF
 		json_ok "v.ok === false && v.code === 'invalid_working_dir'"
 	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"","github_token":""}' |
 		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
-		json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.config_path === '/etc/oxidns/config.yaml' && v.working_dir === '/var/lib/oxidns'"
+		json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.config_path === '/etc/oxidns/config.yaml' && v.working_dir === '/var/lib/oxidns' && v.download_proxy === '' && v.download_proxy_set === false"
+	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"http://user:pass@example.invalid:8080","github_token":"github-secret-token"}' |
+		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
+		json_ok "v.ok === true && v.download_proxy === '' && v.download_proxy_set === true && v.github_token_set === true && JSON.stringify(v).indexOf('user:pass') === -1 && JSON.stringify(v).indexOf('github-secret-token') === -1"
+	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"","github_token":""}' |
+		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
+		json_ok "v.ok === true && v.download_proxy_set === true && v.github_token_set === true"
+	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"","github_token":"","clear_download_proxy":"true","clear_github_token":"true"}' |
+		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
+		json_ok "v.ok === true && v.download_proxy === '' && v.download_proxy_set === false && v.github_token_set === false"
 	cat > "$FAKE_UCI_STATE" <<'EOF'
 oxidns.main.core_repository=svenshi/oxidns
 oxidns.main.core_bundle=full

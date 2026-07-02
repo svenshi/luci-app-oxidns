@@ -13,6 +13,9 @@ msgstr ""
 msgid "A token is currently configured. Enter a new value to replace it."
 msgstr "当前已配置 Token。输入新值可替换现有 Token。"
 
+msgid "A download proxy is currently configured. Enter a new value to replace it."
+msgstr "当前已配置下载代理。输入新值可替换现有代理。"
+
 msgid "Actions"
 msgstr "操作"
 
@@ -28,11 +31,20 @@ msgstr "二进制路径"
 msgid "Build"
 msgstr "构建信息"
 
+msgid "Cancel"
+msgstr "取消"
+
 msgid "Bundle"
 msgstr "Bundle"
 
 msgid "Clear"
 msgstr "清空"
+
+msgid "Clear configured GitHub token"
+msgstr "清除已配置的 GitHub Token"
+
+msgid "Clear configured download proxy"
+msgstr "清除已配置的下载代理"
 
 msgid "Close"
 msgstr "关闭"
@@ -165,6 +177,9 @@ msgstr "操作失败"
 
 msgid "Optional. The token is never shown after saving."
 msgstr "可选。保存后不会再显示 Token。"
+
+msgid "Optional. The proxy is never shown after saving."
+msgstr "可选。保存后不会再显示代理。"
 
 msgid "Open WebUI"
 msgstr "打开 WebUI"

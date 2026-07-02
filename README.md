@@ -85,7 +85,7 @@ LuCI 会按当前设备 CPU 架构选择 OxiDNS Linux musl release archive，例
 
 ## 私有仓库与下载
 
-路由器需要能直接访问 GitHub Releases 和 release archive。私有仓库或受限网络环境可以在 `Settings` 中配置 GitHub token 或下载代理。Token 保存后不会在 LuCI 页面中回显。配置下载代理时需要安装 `curl`，否则 LuCI 会返回明确错误；也可以在 `Core` 页面手动上传 release archive 或二进制进行离线安装。如果系统 DNS 只指向本机回环解析器且下载失败，LuCI 会临时写入 bootstrap DNS `223.5.5.5` 和 `1.1.1.1`，下载尝试结束后恢复原 resolver 文件。
+路由器需要能直接访问 GitHub Releases 和 release archive。私有仓库或受限网络环境可以在 `Settings` 中配置 GitHub token 或下载代理。Token 和代理值保存后不会在 LuCI 页面中回显，需要清除时请勾选对应清除选项。配置下载代理时需要安装 `curl`，否则 LuCI 会返回明确错误；也可以在 `Core` 页面手动上传 release archive 或二进制进行离线安装。如果系统 DNS 只指向本机回环解析器且下载失败，LuCI 会临时写入 bootstrap DNS `223.5.5.5` 和 `1.1.1.1`，下载尝试结束后恢复原 resolver 文件。
 
 ## 已知限制
 
