@@ -11,9 +11,6 @@ msgstr ""
 msgid "A token is currently configured. Enter a new value to replace it."
 msgstr ""
 
-msgid "A download proxy is currently configured. Enter a new value to replace it."
-msgstr ""
-
 msgid "Actions"
 msgstr ""
 
@@ -116,13 +113,16 @@ msgstr ""
 msgid "Error code"
 msgstr ""
 
+msgid "Example: http://127.0.0.1:7890"
+msgstr ""
+
 msgid "Failed to save settings"
 msgstr ""
 
-msgid "GitHub token"
+msgid "Format: http://host:port, https://host:port, socks5://host:port, or socks5h://host:port. Use http://user:pass@host:port when authentication is required."
 msgstr ""
 
-msgid "If the router only has loopback DNS and a download fails, LuCI temporarily writes bootstrap resolvers 223.5.5.5 and 1.1.1.1, then restores the original resolver file."
+msgid "GitHub token"
 msgstr ""
 
 msgid "Install Core"
@@ -174,9 +174,6 @@ msgid "Operation failed"
 msgstr ""
 
 msgid "Optional. The token is never shown after saving."
-msgstr ""
-
-msgid "Optional. The proxy is never shown after saving."
 msgstr ""
 
 msgid "Open WebUI"

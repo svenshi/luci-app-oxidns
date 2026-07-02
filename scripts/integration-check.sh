@@ -117,7 +117,7 @@ rm -f "$UNSAFE_UPLOAD"
 rm -rf "$UNSAFE_DIR"
 printf '%s' '{"content":""}' | root/usr/libexec/rpcd/luci.oxidns call config_validate | json_ok "v.ok === false && v.code === 'missing_content'"
 root/usr/libexec/rpcd/luci.oxidns call config_read | json_ok "v.ok === false && v.code === 'config_not_found'"
-root/usr/libexec/rpcd/luci.oxidns call settings_read | json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.core_bundle === 'full' && v.download_proxy === '' && v.download_proxy_set === false && v.github_token_set === false && !('api_base_url' in v)"
+root/usr/libexec/rpcd/luci.oxidns call settings_read | json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.core_bundle === 'full' && v.download_proxy === '' && v.github_token === '' && v.download_proxy_set === false && v.github_token_set === false && !('api_base_url' in v)"
 FAKE_UCI_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-fake-uci.XXXXXX")"
 FAKE_UCI_STATE="$FAKE_UCI_DIR/state"
 cat > "$FAKE_UCI_DIR/uci" <<'EOF'
@@ -174,10 +174,10 @@ EOF
 		json_ok "v.ok === true && v.core_repository === 'svenshi/oxidns' && v.config_path === '/etc/oxidns/config.yaml' && v.working_dir === '/var/lib/oxidns' && v.download_proxy === '' && v.download_proxy_set === false"
 	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"http://user:pass@example.invalid:8080","github_token":"github-secret-token"}' |
 		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
-		json_ok "v.ok === true && v.download_proxy === '' && v.download_proxy_set === true && v.github_token_set === true && JSON.stringify(v).indexOf('user:pass') === -1 && JSON.stringify(v).indexOf('github-secret-token') === -1"
+		json_ok "v.ok === true && v.download_proxy === 'http://user:pass@example.invalid:8080' && v.github_token === '' && v.download_proxy_set === true && v.github_token_set === true && JSON.stringify(v).indexOf('github-secret-token') === -1"
 	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"","github_token":""}' |
 		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
-		json_ok "v.ok === true && v.download_proxy_set === true && v.github_token_set === true"
+		json_ok "v.ok === true && v.download_proxy_set === true && v.github_token === '' && v.github_token_set === true"
 	printf '%s' '{"core_repository":"svenshi/oxidns","core_bundle":"full","config_path":"/etc/oxidns/config.yaml","working_dir":"/var/lib/oxidns","download_proxy":"","github_token":"","clear_download_proxy":"true","clear_github_token":"true"}' |
 		PATH="$FAKE_UCI_DIR:$PATH" FAKE_UCI_STATE="$FAKE_UCI_STATE" root/usr/libexec/rpcd/luci.oxidns call settings_save |
 		json_ok "v.ok === true && v.download_proxy === '' && v.download_proxy_set === false && v.github_token_set === false"

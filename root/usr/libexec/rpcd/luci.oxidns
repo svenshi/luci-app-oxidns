@@ -427,7 +427,29 @@ detect_rust_target_from_file() {
 
 detect_rust_target() {
 	ARCH="$(uname -m 2>/dev/null || printf unknown)"
-	detect_rust_target_from_file "$TARGETS_FILE" "$ARCH"
+	if detect_rust_target_from_file "$TARGETS_FILE" "$ARCH"; then
+		return 0
+	fi
+	case "$ARCH" in
+		x86_64|amd64)
+			printf 'x86_64-unknown-linux-musl'
+			;;
+		aarch64|arm64)
+			printf 'aarch64-unknown-linux-musl'
+			;;
+		i386|i686)
+			printf 'i686-unknown-linux-musl'
+			;;
+		armv7l|armv7)
+			printf 'armv7-unknown-linux-musleabihf'
+			;;
+		armv6l|armv6)
+			printf 'arm-unknown-linux-musleabihf'
+			;;
+		*)
+			return 1
+			;;
+	esac
 }
 
 emit_status() {
@@ -587,7 +609,9 @@ emit_settings_read() {
 	printf ','
 	json_field_string working_dir "$WORKING_DIR"
 	printf ','
-	json_field_string download_proxy ''
+	json_field_string download_proxy "$DOWNLOAD_PROXY"
+	printf ','
+	json_field_string github_token ''
 	printf ',"download_proxy_set":'
 	json_bool "$PROXY_SET"
 	printf ',"github_token_set":'
@@ -1089,116 +1113,6 @@ require_download_transport() {
 	return 0
 }
 
-resolv_conf_path() {
-	if [ -e /tmp/resolv.conf ] || [ -L /tmp/resolv.conf ]; then
-		printf '/tmp/resolv.conf'
-	else
-		printf '/etc/resolv.conf'
-	fi
-}
-
-resolver_has_only_loopback() {
-	RESOLV_CONF="$(resolv_conf_path)"
-	[ -r "$RESOLV_CONF" ] || return 0
-	awk '
-		$1 == "nameserver" {
-			total++;
-			if ($2 !~ /^(127\.|::1$|0\.0\.0\.0$)/)
-				non_loopback++;
-		}
-		END {
-			exit (total == 0 || non_loopback == 0) ? 0 : 1;
-		}
-	' "$RESOLV_CONF"
-}
-
-collect_bootstrap_nameservers() {
-	RESOLV_CONF="$(resolv_conf_path)"
-	for RESOLV_SOURCE in /tmp/resolv.conf.d/resolv.conf.auto "$RESOLV_CONF"; do
-		[ -r "$RESOLV_SOURCE" ] || continue
-		awk '$1 == "nameserver" && $2 !~ /^(127\.|::1$|0\.0\.0\.0$)/ { print "nameserver " $2 }' "$RESOLV_SOURCE"
-	done | awk '!seen[$0]++'
-}
-
-restore_bootstrap_resolver() {
-	if [ "${BOOTSTRAP_RESOLVER_ACTIVE:-0}" != "1" ]; then
-		return 0
-	fi
-	if [ -n "${BOOTSTRAP_RESOLVER_BACKUP:-}" ] && [ -f "$BOOTSTRAP_RESOLVER_BACKUP" ]; then
-		cp "$BOOTSTRAP_RESOLVER_BACKUP" "$BOOTSTRAP_RESOLVER_CONF" 2>/dev/null || true
-		rm -f "$BOOTSTRAP_RESOLVER_BACKUP"
-	fi
-	BOOTSTRAP_RESOLVER_ACTIVE=0
-	if [ "${CORE_LOCK_HELD:-0}" = "1" ]; then
-		trap 'release_core_lock' EXIT
-		trap 'release_core_lock; exit 1' HUP INT TERM
-	else
-		trap - EXIT HUP INT TERM
-	fi
-}
-
-begin_bootstrap_resolver() {
-	BOOTSTRAP_RESOLVER_CONF="$(resolv_conf_path)"
-	BOOTSTRAP_RESOLVER_BACKUP="$(mktemp "$TMP_ROOT/oxidns-resolv-backup.XXXXXX")"
-	BOOTSTRAP_NAMESERVERS="$(mktemp "$TMP_ROOT/oxidns-resolv-ns.XXXXXX")"
-	BOOTSTRAP_RESOLVER_NEXT="$(mktemp "$TMP_ROOT/oxidns-resolv-next.XXXXXX")"
-
-	if [ -r "$BOOTSTRAP_RESOLVER_CONF" ]; then
-		cp "$BOOTSTRAP_RESOLVER_CONF" "$BOOTSTRAP_RESOLVER_BACKUP"
-		awk '$1 == "search" || $1 == "domain" { print }' "$BOOTSTRAP_RESOLVER_CONF" > "$BOOTSTRAP_RESOLVER_NEXT"
-	else
-		: > "$BOOTSTRAP_RESOLVER_BACKUP"
-		: > "$BOOTSTRAP_RESOLVER_NEXT"
-	fi
-
-	collect_bootstrap_nameservers > "$BOOTSTRAP_NAMESERVERS"
-	if [ ! -s "$BOOTSTRAP_NAMESERVERS" ]; then
-		printf 'nameserver 223.5.5.5\nnameserver 1.1.1.1\n' > "$BOOTSTRAP_NAMESERVERS"
-	fi
-	cat "$BOOTSTRAP_NAMESERVERS" >> "$BOOTSTRAP_RESOLVER_NEXT"
-
-	if ! cp "$BOOTSTRAP_RESOLVER_NEXT" "$BOOTSTRAP_RESOLVER_CONF"; then
-		rm -f "$BOOTSTRAP_RESOLVER_BACKUP" "$BOOTSTRAP_NAMESERVERS" "$BOOTSTRAP_RESOLVER_NEXT"
-		return 1
-	fi
-
-	rm -f "$BOOTSTRAP_NAMESERVERS" "$BOOTSTRAP_RESOLVER_NEXT"
-	BOOTSTRAP_RESOLVER_ACTIVE=1
-	trap 'restore_bootstrap_resolver; release_core_lock; exit 1' HUP INT TERM
-	trap 'restore_bootstrap_resolver; release_core_lock' EXIT
-}
-
-download_file_with_resolver_fallback() {
-	URL="$1"
-	OUT="$2"
-
-	if download_file "$URL" "$OUT"; then
-		return 0
-	fi
-	INITIAL_DOWNLOAD_ERROR="$DOWNLOAD_ERROR"
-	INITIAL_DOWNLOAD_RC="$DOWNLOAD_RC"
-	if ! resolver_has_only_loopback; then
-		return 1
-	fi
-	if ! begin_bootstrap_resolver; then
-		DOWNLOAD_RC="${INITIAL_DOWNLOAD_RC:-1}"
-		DOWNLOAD_ERROR="initial download failed: ${INITIAL_DOWNLOAD_ERROR:-unknown download error}; resolver fallback setup failed"
-		return 1
-	fi
-	set +e
-	download_file "$URL" "$OUT"
-	FALLBACK_DOWNLOAD_RC="$?"
-	FALLBACK_DOWNLOAD_ERROR="$DOWNLOAD_ERROR"
-	set -e
-	restore_bootstrap_resolver
-	if [ "$FALLBACK_DOWNLOAD_RC" -eq 0 ]; then
-		return 0
-	fi
-	DOWNLOAD_RC="$FALLBACK_DOWNLOAD_RC"
-	DOWNLOAD_ERROR="initial download failed: ${INITIAL_DOWNLOAD_ERROR:-unknown download error}; fallback resolver download failed: ${FALLBACK_DOWNLOAD_ERROR:-unknown download error}"
-	return "$FALLBACK_DOWNLOAD_RC"
-}
-
 sha256_file() {
 	sha256sum "$1" 2>/dev/null | awk '{ print $1 }'
 }
@@ -1440,7 +1354,7 @@ install_core_from_release() {
 	RELEASE_URL="$(release_api_url "$CORE_REPOSITORY" "$RELEASE_TARGET")"
 
 	core_progress_log "info" "fetch release metadata: $RELEASE_URL"
-	if ! download_file_with_resolver_fallback "$RELEASE_URL" "$RELEASE_FILE"; then
+	if ! download_file "$RELEASE_URL" "$RELEASE_FILE"; then
 		core_install_error "release_fetch_failed" "failed to fetch OxiDNS release metadata" "download_metadata" "repository=$CORE_REPOSITORY release=$RELEASE_TARGET url=$RELEASE_URL; ${DOWNLOAD_ERROR:-unknown download error}"
 		return 1
 	fi
@@ -1464,7 +1378,7 @@ install_core_from_release() {
 		return 1
 	fi
 	core_progress_log "info" "download archive: $SELECT_URL"
-	if ! download_file_with_resolver_fallback "$SELECT_URL" "$ARCHIVE_FILE"; then
+	if ! download_file "$SELECT_URL" "$ARCHIVE_FILE"; then
 		core_install_error "core_download_failed" "failed to download OxiDNS core archive" "download_archive" "asset=$SELECT_ASSET_NAME url=$SELECT_URL; ${DOWNLOAD_ERROR:-unknown download error}"
 		return 1
 	fi
