@@ -18,7 +18,9 @@ var callSettingsSave = rpc.declare({
 		'config_path',
 		'working_dir',
 		'download_proxy',
-		'github_token'
+		'github_token',
+		'clear_download_proxy',
+		'clear_github_token'
 	],
 	expect: {}
 });
@@ -26,6 +28,11 @@ var callSettingsSave = rpc.declare({
 function field(id) {
 	var node = document.getElementById(id);
 	return node ? node.value : '';
+}
+
+function checked(id) {
+	var node = document.getElementById(id);
+	return !!(node && node.checked);
 }
 
 function row(label, input) {
@@ -68,6 +75,37 @@ function setStatus(message, danger) {
 	node.className = danger ? 'alert-message error' : 'alert-message info';
 }
 
+function setDescription(id, message) {
+	var node = document.getElementById(id);
+	if (node)
+		node.textContent = message || '';
+}
+
+function clearOption(id, label, enabled) {
+	if (!enabled)
+		return '';
+
+	return E('label', { 'style': 'display: block; margin-top: .35em;' }, [
+		E('input', {
+			'id': id,
+			'type': 'checkbox',
+			'style': 'margin-right: .5em;'
+		}),
+		label
+	]);
+}
+
+function secretSettingInput(input, descriptionId, description, clearId, clearLabel, clearEnabled) {
+	return E('div', {}, [
+		input,
+		E('div', {
+			'id': descriptionId,
+			'class': 'cbi-value-description'
+		}, description),
+		clearOption(clearId, clearLabel, clearEnabled)
+	]);
+}
+
 function saveSettings() {
 	var payload = {
 		core_repository: field('oxidns-setting-core-repository') || 'svenshi/oxidns',
@@ -75,7 +113,9 @@ function saveSettings() {
 		config_path: field('oxidns-setting-config-path') || '/etc/oxidns/config.yaml',
 		working_dir: field('oxidns-setting-working-dir') || '/var/lib/oxidns',
 		download_proxy: field('oxidns-setting-download-proxy'),
-		github_token: field('oxidns-setting-github-token')
+		github_token: field('oxidns-setting-github-token'),
+		clear_download_proxy: checked('oxidns-setting-clear-download-proxy'),
+		clear_github_token: checked('oxidns-setting-clear-github-token')
 	};
 
 	ui.showModal(_('OxiDNS'), [
@@ -88,7 +128,9 @@ function saveSettings() {
 		payload.config_path,
 		payload.working_dir,
 		payload.download_proxy,
-		payload.github_token
+		payload.github_token,
+		payload.clear_download_proxy,
+		payload.clear_github_token
 	), null).then(function(result) {
 		ui.hideModal();
 		if (!result || result.ok === false) {
@@ -96,9 +138,22 @@ function saveSettings() {
 			return;
 		}
 		setStatus(_('Settings saved.'), false);
+		var proxy = document.getElementById('oxidns-setting-download-proxy');
+		if (proxy)
+			proxy.value = '';
 		var token = document.getElementById('oxidns-setting-github-token');
 		if (token)
 			token.value = '';
+		var clearProxy = document.getElementById('oxidns-setting-clear-download-proxy');
+		if (clearProxy)
+			clearProxy.checked = false;
+		var clearToken = document.getElementById('oxidns-setting-clear-github-token');
+		if (clearToken)
+			clearToken.checked = false;
+		setDescription('oxidns-setting-download-proxy-description',
+			result.download_proxy_set ? _('A download proxy is currently configured. Enter a new value to replace it.') : _('Optional. The proxy is never shown after saving.'));
+		setDescription('oxidns-setting-github-token-description',
+			result.github_token_set ? _('A token is currently configured. Enter a new value to replace it.') : _('Optional. The token is never shown after saving.'));
 	}).catch(function(err) {
 		ui.hideModal();
 		setStatus(err.message || String(err), true);
@@ -121,12 +176,20 @@ return view.extend({
 					row(_('Core bundle'), bundleSelect('oxidns-setting-core-bundle', settings.core_bundle || 'full')),
 					row(_('Config path'), textInput('oxidns-setting-config-path', settings.config_path || '/etc/oxidns/config.yaml')),
 					row(_('Working directory'), textInput('oxidns-setting-working-dir', settings.working_dir || '/var/lib/oxidns')),
-					row(_('Download proxy'), textInput('oxidns-setting-download-proxy', settings.download_proxy || '')),
-					row(_('GitHub token'), E('div', {}, [
+					row(_('Download proxy'), secretSettingInput(
+						textInput('oxidns-setting-download-proxy', '', false),
+						'oxidns-setting-download-proxy-description',
+						settings.download_proxy_set ? _('A download proxy is currently configured. Enter a new value to replace it.') : _('Optional. The proxy is never shown after saving.'),
+						'oxidns-setting-clear-download-proxy',
+						_('Clear configured download proxy'),
+						settings.download_proxy_set)),
+					row(_('GitHub token'), secretSettingInput(
 						textInput('oxidns-setting-github-token', '', true),
-						E('div', { 'class': 'cbi-value-description' },
-							settings.github_token_set ? _('A token is currently configured. Enter a new value to replace it.') : _('Optional. The token is never shown after saving.'))
-					]))
+						'oxidns-setting-github-token-description',
+						settings.github_token_set ? _('A token is currently configured. Enter a new value to replace it.') : _('Optional. The token is never shown after saving.'),
+						'oxidns-setting-clear-github-token',
+						_('Clear configured GitHub token'),
+						settings.github_token_set))
 				]),
 				E('div', { 'class': 'cbi-button-row' }, [
 					E('button', {

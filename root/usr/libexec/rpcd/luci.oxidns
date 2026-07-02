@@ -16,6 +16,8 @@ GITHUB_API_BASE="https://api.github.com"
 TMP_ROOT="${TMPDIR:-/tmp}"
 CORE_PROGRESS_DIR="$TMP_ROOT/luci-oxidns"
 CORE_PROGRESS_LOG="$CORE_PROGRESS_DIR/core-progress.log"
+CORE_LOCK_DIR="$CORE_PROGRESS_DIR/core-operation.lock"
+CORE_LOCK_HELD=0
 
 CONFIG_PATH="$DEFAULT_CONFIG_PATH"
 WORKING_DIR="$DEFAULT_WORKING_DIR"
@@ -174,6 +176,61 @@ core_progress_command() {
 core_progress_reset() {
 	prepare_core_progress_file 1 || return 0
 	core_progress_log "info" "$1"
+}
+
+pid_is_running() {
+	PID_VALUE="$1"
+	case "$PID_VALUE" in
+		''|*[!0-9]*)
+			return 1
+			;;
+	esac
+	kill -0 "$PID_VALUE" 2>/dev/null
+}
+
+clear_stale_core_lock() {
+	[ -d "$CORE_LOCK_DIR" ] && [ ! -L "$CORE_LOCK_DIR" ] || return 1
+	LOCK_PID="$(sed -n '1p' "$CORE_LOCK_DIR/pid" 2>/dev/null || true)"
+	if pid_is_running "$LOCK_PID"; then
+		return 1
+	fi
+	rm -f "$CORE_LOCK_DIR/pid" 2>/dev/null || return 1
+	rmdir "$CORE_LOCK_DIR" 2>/dev/null || return 1
+}
+
+acquire_core_lock() {
+	prepare_core_progress_dir || {
+		json_error "core_lock_failed" "failed to prepare core operation lock directory"
+		return 1
+	}
+	if mkdir "$CORE_LOCK_DIR" 2>/dev/null || { clear_stale_core_lock && mkdir "$CORE_LOCK_DIR" 2>/dev/null; }; then
+		CORE_LOCK_HELD=1
+		printf '%s\n' "$$" > "$CORE_LOCK_DIR/pid" 2>/dev/null || true
+		chmod 700 "$CORE_LOCK_DIR" 2>/dev/null || true
+		return 0
+	fi
+	core_progress_log "error" "another core operation is already running"
+	json_error "core_operation_busy" "another OxiDNS core operation is already running"
+	return 1
+}
+
+release_core_lock() {
+	if [ "${CORE_LOCK_HELD:-0}" = "1" ]; then
+		rm -f "$CORE_LOCK_DIR/pid" 2>/dev/null || true
+		rmdir "$CORE_LOCK_DIR" 2>/dev/null || true
+		CORE_LOCK_HELD=0
+	fi
+}
+
+run_with_core_lock() {
+	acquire_core_lock || return 1
+	trap 'release_core_lock' EXIT
+	trap 'release_core_lock; exit 1' HUP INT TERM
+	"$@"
+	CORE_ACTION_RC="$?"
+	release_core_lock
+	trap - EXIT HUP INT TERM
+	return "$CORE_ACTION_RC"
 }
 
 file_size_bytes() {
@@ -517,7 +574,9 @@ json_field_string() {
 emit_settings_read() {
 	load_settings
 	TOKEN_SET=0
+	PROXY_SET=0
 	if [ -n "$GITHUB_TOKEN" ]; then TOKEN_SET=1; fi
+	if [ -n "$DOWNLOAD_PROXY" ]; then PROXY_SET=1; fi
 	printf '{'
 	printf '"ok":true,'
 	json_field_string core_repository "$CORE_REPOSITORY"
@@ -528,7 +587,9 @@ emit_settings_read() {
 	printf ','
 	json_field_string working_dir "$WORKING_DIR"
 	printf ','
-	json_field_string download_proxy "$DOWNLOAD_PROXY"
+	json_field_string download_proxy ''
+	printf ',"download_proxy_set":'
+	json_bool "$PROXY_SET"
 	printf ',"github_token_set":'
 	json_bool "$TOKEN_SET"
 	printf '}\n'
@@ -550,6 +611,7 @@ emit_settings_save() {
 		json_error "uci_unavailable" "uci command not found"
 		return 1
 	fi
+	load_settings
 
 	if ! REPOSITORY_VALUE="$(settings_value core_repository "$INPUT")" ||
 		! BUNDLE_VALUE="$(settings_value core_bundle "$INPUT")" ||
@@ -598,15 +660,26 @@ emit_settings_save() {
 	uci -q set "oxidns.main.core_bundle=$BUNDLE_VALUE"
 	uci -q set "oxidns.main.config_path=$CONFIG_VALUE"
 	uci -q set "oxidns.main.working_dir=$WORKING_VALUE"
-	uci -q set "oxidns.main.download_proxy=$PROXY_VALUE"
 	uci -q delete oxidns.main.api_base_url >/dev/null 2>&1 || true
 	uci -q delete oxidns.main.install_mode >/dev/null 2>&1 || true
 	uci -q delete oxidns.main.service_name >/dev/null 2>&1 || true
 	uci -q delete oxidns.main.package_feed_url >/dev/null 2>&1 || true
 	uci -q delete oxidns.main.manifest_url >/dev/null 2>&1 || true
 
+	CLEAR_PROXY="$(input_bool clear_download_proxy "$INPUT")"
+	if [ "$CLEAR_PROXY" = "1" ]; then
+		uci -q delete oxidns.main.download_proxy >/dev/null 2>&1 || true
+	elif [ -n "$PROXY_VALUE" ]; then
+		uci -q set "oxidns.main.download_proxy=$PROXY_VALUE"
+	elif [ -z "$DOWNLOAD_PROXY" ]; then
+		uci -q delete oxidns.main.download_proxy >/dev/null 2>&1 || true
+	fi
+
 	NEW_TOKEN="$(input_value github_token "$INPUT")"
-	if [ -n "$NEW_TOKEN" ]; then
+	CLEAR_TOKEN="$(input_bool clear_github_token "$INPUT")"
+	if [ "$CLEAR_TOKEN" = "1" ]; then
+		uci -q delete oxidns.main.github_token >/dev/null 2>&1 || true
+	elif [ -n "$NEW_TOKEN" ]; then
 		if ! safe_single_line_value "$NEW_TOKEN"; then
 			json_error "invalid_token" "github_token must be a single-line value"
 			return 1
@@ -811,7 +884,7 @@ emit_config_save() {
 			RESTART_STATUS="requested"
 			MESSAGE="configuration saved and service restarted"
 		else
-			MSG="$(cat "$SERVICE_OUT" 2>/dev/null || true)"
+			MSG="$(read_error_detail_file "$SERVICE_OUT" 2>/dev/null || true)"
 			rm -f "$SERVICE_OUT"
 			json_error "service_restart_failed" "configuration saved, but service restart failed: ${MSG:-service restart failed}"
 			return 1
@@ -1056,7 +1129,12 @@ restore_bootstrap_resolver() {
 		rm -f "$BOOTSTRAP_RESOLVER_BACKUP"
 	fi
 	BOOTSTRAP_RESOLVER_ACTIVE=0
-	trap - EXIT HUP INT TERM
+	if [ "${CORE_LOCK_HELD:-0}" = "1" ]; then
+		trap 'release_core_lock' EXIT
+		trap 'release_core_lock; exit 1' HUP INT TERM
+	else
+		trap - EXIT HUP INT TERM
+	fi
 }
 
 begin_bootstrap_resolver() {
@@ -1086,8 +1164,8 @@ begin_bootstrap_resolver() {
 
 	rm -f "$BOOTSTRAP_NAMESERVERS" "$BOOTSTRAP_RESOLVER_NEXT"
 	BOOTSTRAP_RESOLVER_ACTIVE=1
-	trap 'restore_bootstrap_resolver; exit 1' HUP INT TERM
-	trap 'restore_bootstrap_resolver' EXIT
+	trap 'restore_bootstrap_resolver; release_core_lock; exit 1' HUP INT TERM
+	trap 'restore_bootstrap_resolver; release_core_lock' EXIT
 }
 
 download_file_with_resolver_fallback() {
@@ -1517,7 +1595,7 @@ install_core_from_release() {
 	printf '}}\n'
 }
 
-emit_core_install() {
+emit_core_install_locked() {
 	load_settings
 	core_progress_reset "install OxiDNS core"
 	if [ -x "$OXIDNS_BIN" ]; then
@@ -1528,7 +1606,11 @@ emit_core_install() {
 	install_core_from_release install latest "$CORE_BUNDLE"
 }
 
-emit_core_reinstall() {
+emit_core_install() {
+	run_with_core_lock emit_core_install_locked
+}
+
+emit_core_reinstall_locked() {
 	load_settings
 	core_progress_reset "repair reinstall OxiDNS core"
 	BUILD_JSON="$(build_info_json)"
@@ -1542,6 +1624,10 @@ emit_core_reinstall() {
 	core_progress_log "info" "current_version=$CURRENT_VERSION current_bundle=${CURRENT_BUNDLE:-$CORE_BUNDLE}"
 	[ -n "$CURRENT_BUNDLE" ] || CURRENT_BUNDLE="$CORE_BUNDLE"
 	install_core_from_release reinstall "$(version_tag "$CURRENT_VERSION")" "$CURRENT_BUNDLE"
+}
+
+emit_core_reinstall() {
+	run_with_core_lock emit_core_reinstall_locked
 }
 
 upload_core_error() {
@@ -1706,7 +1792,7 @@ install_uploaded_core_from_unpack() {
 	printf '}}\n'
 }
 
-emit_core_upload_install() {
+emit_core_upload_install_locked() {
 	load_settings
 	core_progress_reset "install uploaded OxiDNS core"
 	INPUT="$(cat)"
@@ -1747,7 +1833,11 @@ emit_core_upload_install() {
 	install_uploaded_core_from_unpack "binary" "$UNPACK_DIR"
 }
 
-emit_core_remove() {
+emit_core_upload_install() {
+	run_with_core_lock emit_core_upload_install_locked
+}
+
+emit_core_remove_locked() {
 	INPUT="$(cat)"
 	load_settings
 	core_progress_reset "remove OxiDNS core"
@@ -1828,6 +1918,10 @@ emit_core_remove() {
 	printf '}\n'
 }
 
+emit_core_remove() {
+	run_with_core_lock emit_core_remove_locked
+}
+
 case "${1:-}" in
 	list)
 		printf '{'
@@ -1846,7 +1940,7 @@ case "${1:-}" in
 		printf '"config_validate":{"content":"string"},'
 		printf '"config_save":{"content":"string","base_mtime":"string","restart":"boolean"},'
 		printf '"settings_read":{},'
-		printf '"settings_save":{"core_repository":"string","core_bundle":"string","config_path":"string","working_dir":"string","download_proxy":"string","github_token":"string"},'
+		printf '"settings_save":{"core_repository":"string","core_bundle":"string","config_path":"string","working_dir":"string","download_proxy":"string","github_token":"string","clear_download_proxy":"boolean","clear_github_token":"boolean"},'
 		printf '"logs_recent":{"limit":"number"}'
 		printf '}\n'
 		;;

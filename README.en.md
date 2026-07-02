@@ -85,7 +85,7 @@ To remove the OxiDNS core, click `Remove Core` on the LuCI `Core` page. This sto
 
 ## Private Repositories And Downloads
 
-The router must be able to reach GitHub Releases and release archives directly. For private repositories or restricted networks, configure a GitHub token or download proxy in `Settings`. Tokens are never shown again after saving. A configured download proxy requires `curl`; otherwise LuCI returns a clear error. You can also use `Upload Core` on the `Core` page to install an archive or binary offline. If system DNS only points at a local loopback resolver and a download fails, LuCI temporarily writes bootstrap DNS `223.5.5.5` and `1.1.1.1`, then restores the original resolver file after the download attempt.
+The router must be able to reach GitHub Releases and release archives directly. For private repositories or restricted networks, configure a GitHub token or download proxy in `Settings`. Token and proxy values are never shown again after saving; use the matching clear option to remove them. A configured download proxy requires `curl`; otherwise LuCI returns a clear error. You can also use `Upload Core` on the `Core` page to install an archive or binary offline. If system DNS only points at a local loopback resolver and a download fails, LuCI temporarily writes bootstrap DNS `223.5.5.5` and `1.1.1.1`, then restores the original resolver file after the download attempt.
 
 ## Known Limitations
 
