@@ -947,7 +947,7 @@ write_openwrt_default_config() {
 			next;
 		}
 		top == "api" && second == "http" && /^[[:space:]][[:space:]][[:space:]][[:space:]]listen:[[:space:]]*/ {
-			print "    listen: \"127.0.0.1:9199\"";
+			print "    listen: \"0.0.0.0:9199\"";
 			listen_done = 1;
 			next;
 		}
