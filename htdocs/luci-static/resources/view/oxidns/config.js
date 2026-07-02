@@ -9,6 +9,12 @@ var callConfigRead = rpc.declare({
 	expect: {}
 });
 
+var callStatus = rpc.declare({
+	object: 'luci.oxidns',
+	method: 'status',
+	expect: {}
+});
+
 var callConfigValidate = rpc.declare({
 	object: 'luci.oxidns',
 	method: 'config_validate',
@@ -35,6 +41,10 @@ function valueOrDash(value) {
 	if (value === null || value === undefined || value === '')
 		return '-';
 	return value;
+}
+
+function coreInstalled(status) {
+	return !!(status && status.core && status.core.installed);
 }
 
 function textareaValue() {
@@ -102,7 +112,7 @@ function saveYaml(restart) {
 
 return view.extend({
 	load: function() {
-		return L.resolveDefault(callConfigRead(), null).then(function(config) {
+		var configPromise = L.resolveDefault(callConfigRead(), null).then(function(config) {
 			return config || {
 				ok: false,
 				message: _('Unable to load configuration.')
@@ -113,15 +123,42 @@ return view.extend({
 				message: loadErrorMessage(err)
 			};
 		});
+
+		return Promise.all([
+			configPromise,
+			L.resolveDefault(callStatus(), {})
+		]).then(function(results) {
+			return {
+				config: results[0],
+				status: results[1] || {}
+			};
+		});
 	},
 
-	render: function(config) {
-		configState = config || {};
+	render: function(data) {
+		configState = data && data.config ? data.config : {};
+		var statusState = data && data.status ? data.status : {};
 		var readFailed = configState.ok === false;
 		var configContent = configState.content || '';
 		var configMessage = readFailed
 			? (configState.message || _('Unable to load configuration.'))
 			: '';
+
+		if (readFailed && !coreInstalled(statusState)) {
+			return E('div', { 'class': 'cbi-map' }, [
+				E('h2', {}, _('OxiDNS Configuration')),
+				E('div', { 'class': 'cbi-map-descr' },
+					_('Edit, validate, and save the full OxiDNS YAML configuration file.')),
+				E('div', { 'class': 'cbi-section' }, [
+					E('div', { 'class': 'alert-message warning', 'style': 'margin: 1em 0;' },
+						_('Install the OxiDNS core before editing the configuration.')),
+					E('a', {
+						'class': 'btn cbi-button cbi-button-action',
+						'href': L.url('admin/services/oxidns/core')
+					}, _('Install Core'))
+				])
+			]);
+		}
 
 		return E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, _('OxiDNS Configuration')),

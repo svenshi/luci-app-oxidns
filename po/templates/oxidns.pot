@@ -98,10 +98,16 @@ msgstr ""
 msgid "GitHub token"
 msgstr ""
 
+msgid "If the router only has loopback DNS and a download fails, LuCI temporarily writes bootstrap resolvers 223.5.5.5 and 1.1.1.1, then restores the original resolver file."
+msgstr ""
+
 msgid "Install Core"
 msgstr ""
 
 msgid "Install core files"
+msgstr ""
+
+msgid "Install the OxiDNS core before editing the configuration."
 msgstr ""
 
 msgid "Install or repair the OxiDNS core binary. Runtime upgrades are handled by OxiDNS itself."
