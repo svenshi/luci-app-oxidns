@@ -13,9 +13,6 @@ msgstr ""
 msgid "A token is currently configured. Enter a new value to replace it."
 msgstr "当前已配置 Token。输入新值可替换现有 Token。"
 
-msgid "A download proxy is currently configured. Enter a new value to replace it."
-msgstr "当前已配置下载代理。输入新值可替换现有代理。"
-
 msgid "Actions"
 msgstr "操作"
 
@@ -118,14 +115,17 @@ msgstr "错误"
 msgid "Error code"
 msgstr "错误码"
 
+msgid "Example: http://127.0.0.1:7890"
+msgstr "示例：http://127.0.0.1:7890"
+
 msgid "Failed to save settings"
 msgstr "保存设置失败"
 
+msgid "Format: http://host:port, https://host:port, socks5://host:port, or socks5h://host:port. Use http://user:pass@host:port when authentication is required."
+msgstr "格式：http://主机:端口、https://主机:端口、socks5://主机:端口 或 socks5h://主机:端口。需要认证时使用 http://用户:密码@主机:端口。"
+
 msgid "GitHub token"
 msgstr "GitHub Token"
-
-msgid "If the router only has loopback DNS and a download fails, LuCI temporarily writes bootstrap resolvers 223.5.5.5 and 1.1.1.1, then restores the original resolver file."
-msgstr "如果路由器 DNS 只指向本机回环解析器且下载失败，LuCI 会临时写入 bootstrap DNS 223.5.5.5 和 1.1.1.1，并在下载尝试结束后恢复原 resolver 文件。"
 
 msgid "Install Core"
 msgstr "安装内核"
@@ -177,9 +177,6 @@ msgstr "操作失败"
 
 msgid "Optional. The token is never shown after saving."
 msgstr "可选。保存后不会再显示 Token。"
-
-msgid "Optional. The proxy is never shown after saving."
-msgstr "可选。保存后不会再显示代理。"
 
 msgid "Open WebUI"
 msgstr "打开 WebUI"

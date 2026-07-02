@@ -451,8 +451,6 @@ return view.extend({
 				E('h3', {}, _('Actions')),
 				E('div', { 'class': 'cbi-section-descr' },
 					_('LuCI can download the official OxiDNS release archive or install an uploaded .tar.gz archive or single oxidns binary. Future upgrades are handled by the OxiDNS core.')),
-				E('div', { 'class': 'cbi-section-descr' },
-					_('If the router only has loopback DNS and a download fails, LuCI temporarily writes bootstrap resolvers 223.5.5.5 and 1.1.1.1, then restores the original resolver file.')),
 				E('div', {
 					'id': 'oxidns-core-actions',
 					'class': 'cbi-button-row',

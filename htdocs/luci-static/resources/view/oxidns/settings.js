@@ -42,12 +42,13 @@ function row(label, input) {
 	]);
 }
 
-function textInput(id, value, password) {
+function textInput(id, value, password, placeholder) {
 	return E('input', {
 		'id': id,
 		'class': 'cbi-input-text',
 		'type': password ? 'password' : 'text',
-		'value': value || ''
+		'value': value || '',
+		'placeholder': placeholder || null
 	});
 }
 
@@ -81,11 +82,21 @@ function setDescription(id, message) {
 		node.textContent = message || '';
 }
 
-function clearOption(id, label, enabled) {
-	if (!enabled)
-		return '';
+function setClearOptionVisible(id, visible) {
+	var row = document.getElementById('%s-row'.format(id));
+	var input = document.getElementById(id);
 
-	return E('label', { 'style': 'display: block; margin-top: .35em;' }, [
+	if (row)
+		row.style.display = visible ? 'block' : 'none';
+	if (input)
+		input.checked = false;
+}
+
+function clearOption(id, label, enabled) {
+	return E('label', {
+		'id': '%s-row'.format(id),
+		'style': 'display: %s; margin-top: .35em;'.format(enabled ? 'block' : 'none')
+	}, [
 		E('input', {
 			'id': id,
 			'type': 'checkbox',
@@ -104,6 +115,10 @@ function secretSettingInput(input, descriptionId, description, clearId, clearLab
 		}, description),
 		clearOption(clearId, clearLabel, clearEnabled)
 	]);
+}
+
+function proxyDescription() {
+	return _('Format: http://host:port, https://host:port, socks5://host:port, or socks5h://host:port. Use http://user:pass@host:port when authentication is required.');
 }
 
 function saveSettings() {
@@ -140,7 +155,7 @@ function saveSettings() {
 		setStatus(_('Settings saved.'), false);
 		var proxy = document.getElementById('oxidns-setting-download-proxy');
 		if (proxy)
-			proxy.value = '';
+			proxy.value = result.download_proxy || '';
 		var token = document.getElementById('oxidns-setting-github-token');
 		if (token)
 			token.value = '';
@@ -150,8 +165,10 @@ function saveSettings() {
 		var clearToken = document.getElementById('oxidns-setting-clear-github-token');
 		if (clearToken)
 			clearToken.checked = false;
+		setClearOptionVisible('oxidns-setting-clear-download-proxy', result.download_proxy_set);
+		setClearOptionVisible('oxidns-setting-clear-github-token', result.github_token_set);
 		setDescription('oxidns-setting-download-proxy-description',
-			result.download_proxy_set ? _('A download proxy is currently configured. Enter a new value to replace it.') : _('Optional. The proxy is never shown after saving.'));
+			proxyDescription());
 		setDescription('oxidns-setting-github-token-description',
 			result.github_token_set ? _('A token is currently configured. Enter a new value to replace it.') : _('Optional. The token is never shown after saving.'));
 	}).catch(function(err) {
@@ -177,9 +194,9 @@ return view.extend({
 					row(_('Config path'), textInput('oxidns-setting-config-path', settings.config_path || '/etc/oxidns/config.yaml')),
 					row(_('Working directory'), textInput('oxidns-setting-working-dir', settings.working_dir || '/var/lib/oxidns')),
 					row(_('Download proxy'), secretSettingInput(
-						textInput('oxidns-setting-download-proxy', '', false),
+						textInput('oxidns-setting-download-proxy', settings.download_proxy || '', false, _('Example: http://127.0.0.1:7890')),
 						'oxidns-setting-download-proxy-description',
-						settings.download_proxy_set ? _('A download proxy is currently configured. Enter a new value to replace it.') : _('Optional. The proxy is never shown after saving.'),
+						proxyDescription(),
 						'oxidns-setting-clear-download-proxy',
 						_('Clear configured download proxy'),
 						settings.download_proxy_set)),
