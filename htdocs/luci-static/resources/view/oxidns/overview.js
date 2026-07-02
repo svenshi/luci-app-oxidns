@@ -39,6 +39,10 @@ function serviceEnabled(status) {
 	return !!(status && status.service_status && status.service_status.enabled);
 }
 
+function coreInstalled(status) {
+	return !!(status && status.core && status.core.installed);
+}
+
 function statusBadge(text, good) {
 	return E('span', {
 		'class': good ? 'label label-success' : 'label label-warning'
@@ -174,6 +178,8 @@ function setNodeContent(node, value) {
 }
 
 function blockedActionMessage(action, status) {
+	if (!coreInstalled(status))
+		return _('Install the OxiDNS core before using service controls.');
 	if (action === 'start' && serviceRunning(status))
 		return _('OxiDNS is already running.');
 	if (action === 'stop' && !serviceRunning(status))
@@ -253,8 +259,33 @@ function actionButton(label, action, style, id) {
 	return E('button', attrs, label);
 }
 
+function disabledActionButton(label, hint, id) {
+	return E('button', {
+		'id': id,
+		'class': 'btn cbi-button cbi-button-neutral',
+		'type': 'button',
+		'disabled': 'disabled',
+		'title': hint
+	}, label);
+}
+
+function coreInstallLink() {
+	return E('a', {
+		'class': 'btn cbi-button cbi-button-action',
+		'href': L.url('admin/services/oxidns/core')
+	}, _('Install Core'));
+}
+
 function serviceActionButtons(status) {
 	var actions = [];
+	var missingCoreHint = _('Install the OxiDNS core before using service controls.');
+
+	if (!coreInstalled(status)) {
+		actions.push(disabledActionButton(_('Start'), missingCoreHint, 'oxidns-service-start'));
+		actions.push(disabledActionButton(_('Enable'), missingCoreHint, 'oxidns-service-enable'));
+		actions.push(coreInstallLink());
+		return actions;
+	}
 
 	if (serviceRunning(status)) {
 		actions.push(actionButton(_('Stop'), 'stop', 'negative', 'oxidns-service-stop'));
@@ -272,7 +303,10 @@ function serviceActionButtons(status) {
 }
 
 function serviceActionStateKey(status) {
-	return '%s:%s'.format(serviceRunning(status) ? 'running' : 'stopped', serviceEnabled(status) ? 'enabled' : 'disabled');
+	return '%s:%s:%s'.format(
+		coreInstalled(status) ? 'core' : 'missing-core',
+		serviceRunning(status) ? 'running' : 'stopped',
+		serviceEnabled(status) ? 'enabled' : 'disabled');
 }
 
 function updateServiceActions(status) {
