@@ -13,9 +13,11 @@ var callLogsRecent = rpc.declare({
 var state = {
 	lines: [],
 	pending: [],
+	rawLines: [],
 	paused: false,
 	followTail: true,
-	limit: 100
+	limit: 100,
+	clearBaseline: null
 };
 
 function byId(id) {
@@ -25,6 +27,35 @@ function byId(id) {
 function normalizeLines(result) {
 	var lines = result && result.lines;
 	return Array.isArray(lines) ? lines : [];
+}
+
+function trimClearedLines(lines) {
+	var baseline = state.clearBaseline;
+	var remove = 0;
+
+	if (!baseline || !baseline.length)
+		return lines;
+
+	for (var i = Math.min(baseline.length, lines.length); i > 0; i--) {
+		var match = true;
+
+		for (var j = 0; j < i; j++) {
+			if (baseline[baseline.length - i + j] !== lines[j]) {
+				match = false;
+				break;
+			}
+		}
+
+		if (match) {
+			remove = i;
+			break;
+		}
+	}
+
+	if (remove > 0)
+		return lines.slice(remove);
+
+	return lines;
 }
 
 function afterPaint(fn) {
@@ -72,10 +103,14 @@ function refreshLogs() {
 		if (!result || result.ok === false)
 			return;
 
+		state.rawLines = normalizeLines(result);
+
+		var lines = trimClearedLines(state.rawLines);
+
 		if (state.paused)
-			state.pending = normalizeLines(result);
+			state.pending = lines;
 		else
-			state.lines = normalizeLines(result);
+			state.lines = lines;
 
 		renderLines();
 	});
@@ -93,6 +128,23 @@ function setPaused(paused) {
 
 function togglePaused() {
 	return setPaused(!state.paused);
+}
+
+function clearLogs() {
+	var currentLines = state.paused && state.pending.length
+		? state.pending.slice()
+		: state.lines.slice();
+	var baseline = state.rawLines.length
+		? state.rawLines.slice()
+		: currentLines;
+
+	if (baseline.length)
+		state.clearBaseline = baseline;
+
+	state.lines = [];
+	state.pending = [];
+	state.followTail = true;
+	renderLines();
 }
 
 function controlButton(label, handler, style) {
@@ -117,8 +169,10 @@ return view.extend({
 	render: function(initial) {
 		state.lines = normalizeLines(initial);
 		state.pending = [];
+		state.rawLines = state.lines.slice();
 		state.paused = false;
 		state.followTail = true;
+		state.clearBaseline = null;
 		window.setTimeout(refreshLogs, 0);
 		poll.add(refreshLogs, 1);
 
@@ -140,12 +194,7 @@ return view.extend({
 						}
 					}, _('Pause')),
 					controlButton(_('Refresh'), refreshLogs, 'action'),
-					controlButton(_('Clear'), function() {
-						state.lines = [];
-						state.pending = [];
-						state.followTail = true;
-						renderLines();
-					}, 'negative')
+					controlButton(_('Clear'), clearLogs, 'negative')
 				]),
 				E('pre', {
 					'id': 'oxidns-log-lines',
