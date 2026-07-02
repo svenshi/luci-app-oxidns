@@ -26,6 +26,7 @@ This repository does not contain the OxiDNS Rust core source code, and it does n
 - Frontend pages must call system operations through the rpcd backend. Do not perform shell/system actions directly in LuCI JavaScript.
 - The basic configuration form only edits safe top-level fields. It must not support plugin form editing or mutate the `plugins` structure.
 - GitHub tokens and other secrets must not be echoed to UI, logs, or RPC error messages.
+- Development must consider both OpenWrt package manager environments: `opkg` / `ipk` on older releases and `apk` / `apk` packages on newer releases. Package build, install, upgrade, removal, validation, and LuCI Software upload behavior should remain compatible with both unless a change explicitly scopes one environment out.
 
 ## Key Paths
 
