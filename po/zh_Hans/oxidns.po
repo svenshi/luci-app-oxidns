@@ -46,8 +46,14 @@ msgstr "配置路径"
 msgid "Configuration"
 msgstr "配置"
 
+msgid "Configuration and working directory data are preserved unless selected below."
+msgstr "除非勾选下面的选项，否则配置和工作目录数据会保留。"
+
 msgid "Configure OxiDNS core download sources, runtime paths, and optional download credentials."
 msgstr "配置 OxiDNS 内核下载源、运行路径和可选下载凭据。"
+
+msgid "Confirm"
+msgstr "确认"
 
 msgid "Control the OpenWrt init service for OxiDNS."
 msgstr "控制 OxiDNS 的 OpenWrt init 服务。"
@@ -69,6 +75,12 @@ msgstr "内核操作失败"
 
 msgid "Core repository"
 msgstr "内核仓库"
+
+msgid "Delete configuration file"
+msgstr "删除配置文件"
+
+msgid "Delete working directory"
+msgstr "删除工作目录"
 
 msgid "Disable"
 msgstr "禁用"
@@ -198,6 +210,12 @@ msgstr "刷新"
 
 msgid "Remove Core"
 msgstr "删除内核"
+
+msgid "Remove OxiDNS Core"
+msgstr "删除 OxiDNS 内核"
+
+msgid "Remove the OxiDNS core binary and Web UI files."
+msgstr "删除 OxiDNS 内核二进制和 Web UI 文件。"
 
 msgid "Remove the OxiDNS core binary? Configuration and runtime data will be preserved."
 msgstr "确定删除 OxiDNS 内核二进制？配置和运行时数据会保留。"
