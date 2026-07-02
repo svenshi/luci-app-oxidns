@@ -11,6 +11,7 @@ tar_has_member() {
 		{
 			path = $0;
 			sub(/^\.\//, "", path);
+			sub(/\/$/, "", path);
 			if (path == member)
 				found = 1;
 		}
@@ -20,6 +21,10 @@ tar_has_member() {
 
 tar_member_contains() {
 	tar -xOzf "$1" "$2" 2>/dev/null | grep -q "$3"
+}
+
+apk_data_has_checksum() {
+	gzip -dc "$1" | grep -q 'APK-TOOLS.checksum.SHA1='
 }
 
 tar_nested_has_member() {
@@ -93,6 +98,11 @@ tar_nested_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk" contro
 tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .PKGINFO
 tar_member_contains "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .PKGINFO '^arch = noarch$'
 tar_member_contains "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .PKGINFO '^datahash = [0-9a-f][0-9a-f]*$'
+apk_data_has_checksum "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk"
+tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" etc
+tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" etc/config
+tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" usr/share/luci/menu.d
+tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" www/luci-static/resources/view/oxidns
 tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" usr/libexec/rpcd/luci.oxidns
 tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" etc/init.d/oxidns
 tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .post-install
@@ -101,6 +111,8 @@ tar_has_member "$DIST_DIR/luci-app-oxidns_0.1.0-r1_all.apk" .post-deinstall
 tar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" .PKGINFO
 tar_member_contains "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" .PKGINFO '^arch = noarch$'
 tar_member_contains "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" .PKGINFO '^datahash = [0-9a-f][0-9a-f]*$'
+apk_data_has_checksum "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk"
+tar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" usr/lib/lua/luci/i18n
 tar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo
 tar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" .post-install
 tar_has_member "$DIST_DIR/luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk" .post-upgrade
