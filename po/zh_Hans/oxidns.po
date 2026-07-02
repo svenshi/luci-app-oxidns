@@ -253,6 +253,9 @@ msgstr "目标架构"
 msgid "Unable to query OxiDNS status"
 msgstr "无法查询 OxiDNS 状态"
 
+msgid "Unable to load configuration."
+msgstr "无法加载配置。"
+
 msgid "Unavailable"
 msgstr "不可用"
 

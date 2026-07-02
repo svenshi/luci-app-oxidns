@@ -25,6 +25,12 @@ var callConfigSave = rpc.declare({
 
 var configState = {};
 
+function loadErrorMessage(err) {
+	if (err && (err.message || err.error))
+		return err.message || err.error;
+	return _('Unable to load configuration.');
+}
+
 function valueOrDash(value) {
 	if (value === null || value === undefined || value === '')
 		return '-';
@@ -82,11 +88,26 @@ function saveYaml(restart) {
 
 return view.extend({
 	load: function() {
-		return L.resolveDefault(callConfigRead(), {});
+		return L.resolveDefault(callConfigRead(), null).then(function(config) {
+			return config || {
+				ok: false,
+				message: _('Unable to load configuration.')
+			};
+		}).catch(function(err) {
+			return {
+				ok: false,
+				message: loadErrorMessage(err)
+			};
+		});
 	},
 
 	render: function(config) {
 		configState = config || {};
+		var readFailed = configState.ok === false;
+		var configContent = configState.content || '';
+		var configMessage = readFailed
+			? (configState.message || _('Unable to load configuration.'))
+			: '';
 
 		return E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, _('OxiDNS Configuration')),
@@ -100,12 +121,17 @@ return view.extend({
 						E('div', { 'class': 'td left' }, valueOrDash(configState.path))
 					])
 				]),
+				readFailed ? E('div', {
+					'class': 'alert-message warning',
+					'style': 'margin: 1em 0;'
+				}, configMessage) : '',
 				E('textarea', {
 					'id': 'oxidns-config-content',
 					'class': 'cbi-input-textarea',
 					'style': 'width: 100%; min-height: 420px; font-family: monospace;',
-					'spellcheck': 'false'
-				}, configState.content || ''),
+					'spellcheck': 'false',
+					'value': configContent
+				}, configContent),
 				E('div', {
 					'class': 'cbi-button-row',
 					'style': 'display: flex; flex-wrap: wrap; gap: .5em; margin-top: 1em;'

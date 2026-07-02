@@ -332,7 +332,9 @@ stat_mtime() {
 emit_config_read() {
 	load_settings
 	if [ ! -r "$CONFIG_PATH" ]; then
-		json_error "config_not_found" "configuration file not found"
+		printf '{"ok":false,"code":"config_not_found","message":"configuration file not found","path":'
+		json_string "$CONFIG_PATH"
+		printf '}\n'
 		return 1
 	fi
 	printf '{'
