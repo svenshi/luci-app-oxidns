@@ -50,6 +50,20 @@ function setStatus(message, danger) {
 	node.className = danger ? 'alert-message error' : 'alert-message info';
 }
 
+function configTextarea(content) {
+	var value = content || '';
+	var textarea = E('textarea', {
+		'id': 'oxidns-config-content',
+		'class': 'cbi-input-textarea',
+		'style': 'width: 100%; min-height: 420px; font-family: monospace;',
+		'spellcheck': 'false'
+	});
+
+	textarea.defaultValue = value;
+	textarea.value = value;
+	return textarea;
+}
+
 function runConfigCall(label, call, args, onSuccess) {
 	ui.showModal(_('OxiDNS'), [
 		E('p', {}, label)
@@ -125,13 +139,7 @@ return view.extend({
 					'class': 'alert-message warning',
 					'style': 'margin: 1em 0;'
 				}, configMessage) : '',
-				E('textarea', {
-					'id': 'oxidns-config-content',
-					'class': 'cbi-input-textarea',
-					'style': 'width: 100%; min-height: 420px; font-family: monospace;',
-					'spellcheck': 'false',
-					'value': configContent
-				}, configContent),
+				configTextarea(configContent),
 				E('div', {
 					'class': 'cbi-button-row',
 					'style': 'display: flex; flex-wrap: wrap; gap: .5em; margin-top: 1em;'
