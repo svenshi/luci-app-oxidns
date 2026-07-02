@@ -7,7 +7,6 @@
 					"status",
 					"core_progress",
 					"config_read",
-					"config_validate",
 					"settings_read",
 					"logs_recent"
 				]
@@ -25,6 +24,7 @@
 					"service_restart",
 					"service_enable",
 					"service_disable",
+					"config_validate",
 					"config_save",
 					"settings_save"
 				]
