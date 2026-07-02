@@ -302,6 +302,14 @@ run_service() {
 	load_settings
 	ACTION="$1"
 	INIT="$(init_script)"
+	case "$ACTION" in
+		start|restart|enable)
+			if [ ! -x "$OXIDNS_BIN" ]; then
+				json_error "core_not_installed" "Install the OxiDNS core before using service controls"
+				return 1
+			fi
+			;;
+	esac
 	if [ ! -x "$INIT" ]; then
 		json_error "service_unavailable" "init script not found: $INIT"
 		return 1

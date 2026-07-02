@@ -88,6 +88,9 @@ msgstr "GitHub Token"
 msgid "Install Core"
 msgstr "安装内核"
 
+msgid "Install the OxiDNS core before using service controls."
+msgstr "请先安装 OxiDNS 内核，再使用服务控制。"
+
 msgid "Install or repair the OxiDNS core binary. Runtime upgrades are handled by OxiDNS itself."
 msgstr "安装或修复 OxiDNS 内核二进制。运行时升级由 OxiDNS 自身处理。"
 
