@@ -20,6 +20,7 @@ tar_has_member() {
 		{
 			path = $0;
 			sub(/^\.\//, "", path);
+			sub(/\/$/, "", path);
 			if (path == member)
 				found = 1;
 		}
@@ -29,6 +30,10 @@ tar_has_member() {
 
 tar_member_contains() {
 	tar -xOzf "$1" "$2" 2>/dev/null | grep -q "$3"
+}
+
+apk_data_has_checksum() {
+	gzip -dc "$1" | grep -q 'APK-TOOLS.checksum.SHA1='
 }
 
 tar_nested_has_member() {
@@ -60,6 +65,7 @@ tar_nested_has_member() {
 }
 
 need_cmd awk
+need_cmd gzip
 need_cmd grep
 need_cmd sha256sum
 need_cmd tar
@@ -79,6 +85,11 @@ tar_nested_has_member "$OUT_DIR/${I18N_BASE}.ipk" control.tar.gz postinst
 tar_has_member "$OUT_DIR/${PKG_BASE}.apk" .PKGINFO
 tar_member_contains "$OUT_DIR/${PKG_BASE}.apk" .PKGINFO '^arch = noarch$'
 tar_member_contains "$OUT_DIR/${PKG_BASE}.apk" .PKGINFO '^datahash = [0-9a-f][0-9a-f]*$'
+apk_data_has_checksum "$OUT_DIR/${PKG_BASE}.apk"
+tar_has_member "$OUT_DIR/${PKG_BASE}.apk" etc
+tar_has_member "$OUT_DIR/${PKG_BASE}.apk" etc/config
+tar_has_member "$OUT_DIR/${PKG_BASE}.apk" usr/share/luci/menu.d
+tar_has_member "$OUT_DIR/${PKG_BASE}.apk" www/luci-static/resources/view/oxidns
 tar_has_member "$OUT_DIR/${PKG_BASE}.apk" usr/libexec/rpcd/luci.oxidns
 tar_has_member "$OUT_DIR/${PKG_BASE}.apk" etc/init.d/oxidns
 tar_has_member "$OUT_DIR/${PKG_BASE}.apk" .post-install
@@ -87,6 +98,8 @@ tar_has_member "$OUT_DIR/${PKG_BASE}.apk" .post-deinstall
 tar_has_member "$OUT_DIR/${I18N_BASE}.apk" .PKGINFO
 tar_member_contains "$OUT_DIR/${I18N_BASE}.apk" .PKGINFO '^arch = noarch$'
 tar_member_contains "$OUT_DIR/${I18N_BASE}.apk" .PKGINFO '^datahash = [0-9a-f][0-9a-f]*$'
+apk_data_has_checksum "$OUT_DIR/${I18N_BASE}.apk"
+tar_has_member "$OUT_DIR/${I18N_BASE}.apk" usr/lib/lua/luci/i18n
 tar_has_member "$OUT_DIR/${I18N_BASE}.apk" usr/lib/lua/luci/i18n/oxidns.zh-cn.lmo
 tar_has_member "$OUT_DIR/${I18N_BASE}.apk" .post-install
 tar_has_member "$OUT_DIR/${I18N_BASE}.apk" .post-upgrade

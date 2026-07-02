@@ -35,15 +35,8 @@ write_file_list() {
 	file_list_out="$2"
 	(
 		cd "$file_list_dir"
-		find . ! -name . ! -type d | sed 's#^\./##' | LC_ALL=C sort
+		find . ! -name . | sed 's#^\./##' | LC_ALL=C sort
 	) > "$file_list_out"
-}
-
-tar_create_gz_from_list() {
-	tar_list_gz_out="$1"
-	tar_list_gz_dir="$2"
-	tar_list_gz_list="$3"
-	tar --format=ustar --owner=0 --group=0 --numeric-owner -czf "$tar_list_gz_out" -C "$tar_list_gz_dir" -T "$tar_list_gz_list"
 }
 
 tar_create_segment_gz_from_list() {
@@ -87,14 +80,14 @@ create_apk() {
 	apk_control_dir="$2"
 	apk_data_dir="$3"
 	apk_name="$(basename "$apk_out" .apk)"
-	apk_data_list="$TMP_DIR/$apk_name.data.list"
 	apk_control_list="$TMP_DIR/$apk_name.control.list"
+	apk_data_raw="$TMP_DIR/$apk_name.data.tar"
 	apk_data_tar="$TMP_DIR/$apk_name.data.tar.gz"
 	apk_control_tar="$TMP_DIR/$apk_name.control.tar.gz"
 	apk_datahash=""
 
-	write_file_list "$apk_data_dir" "$apk_data_list"
-	tar_create_gz_from_list "$apk_data_tar" "$apk_data_dir" "$apk_data_list"
+	node scripts/write-apk-data-tar.mjs "$apk_data_dir" "$apk_data_raw"
+	gzip -9n < "$apk_data_raw" > "$apk_data_tar"
 	apk_datahash="$(sha256sum "$apk_data_tar" | awk '{ print $1 }')"
 	printf 'datahash = %s\n' "$apk_datahash" >> "$apk_control_dir/.PKGINFO"
 
