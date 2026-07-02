@@ -13,7 +13,8 @@ DEFAULT_CORE_REPOSITORY="svenshi/oxidns"
 DEFAULT_CORE_BUNDLE="full"
 GITHUB_API_BASE="https://api.github.com"
 TMP_ROOT="${TMPDIR:-/tmp}"
-CORE_PROGRESS_LOG="$TMP_ROOT/oxidns-core-progress.log"
+CORE_PROGRESS_DIR="$TMP_ROOT/luci-oxidns"
+CORE_PROGRESS_LOG="$CORE_PROGRESS_DIR/core-progress.log"
 
 CONFIG_PATH="$DEFAULT_CONFIG_PATH"
 WORKING_DIR="$DEFAULT_WORKING_DIR"
@@ -121,6 +122,37 @@ sanitize_progress_text() {
 	'
 }
 
+prepare_core_progress_dir() {
+	if [ -L "$CORE_PROGRESS_DIR" ] || { [ -e "$CORE_PROGRESS_DIR" ] && [ ! -d "$CORE_PROGRESS_DIR" ]; }; then
+		return 1
+	fi
+	if [ ! -d "$CORE_PROGRESS_DIR" ]; then
+		mkdir "$CORE_PROGRESS_DIR" 2>/dev/null || return 1
+	fi
+	if command -v chown >/dev/null 2>&1; then
+		chown 0:0 "$CORE_PROGRESS_DIR" 2>/dev/null || true
+	fi
+	chmod 700 "$CORE_PROGRESS_DIR" 2>/dev/null || true
+	return 0
+}
+
+prepare_core_progress_file() {
+	RESET_FILE="${1:-0}"
+	prepare_core_progress_dir || return 1
+	if [ -L "$CORE_PROGRESS_LOG" ] || { [ -e "$CORE_PROGRESS_LOG" ] && [ ! -f "$CORE_PROGRESS_LOG" ]; }; then
+		rm -f "$CORE_PROGRESS_LOG" 2>/dev/null || return 1
+	fi
+	if [ "$RESET_FILE" = "1" ] || [ ! -e "$CORE_PROGRESS_LOG" ]; then
+		: > "$CORE_PROGRESS_LOG" 2>/dev/null || return 1
+	fi
+	[ ! -L "$CORE_PROGRESS_LOG" ] || return 1
+	if command -v chown >/dev/null 2>&1; then
+		chown 0:0 "$CORE_PROGRESS_LOG" 2>/dev/null || true
+	fi
+	chmod 600 "$CORE_PROGRESS_LOG" 2>/dev/null || true
+	return 0
+}
+
 progress_timestamp() {
 	date '+%H:%M:%S' 2>/dev/null || printf '--:--:--'
 }
@@ -130,7 +162,7 @@ core_progress_log() {
 	PROGRESS_MESSAGE="$2"
 	PROGRESS_TEXT="$(printf '%s' "$PROGRESS_MESSAGE" | sanitize_progress_text)"
 	[ -n "$PROGRESS_TEXT" ] || PROGRESS_TEXT="-"
-	mkdir -p "$(dirname "$CORE_PROGRESS_LOG")" 2>/dev/null || true
+	prepare_core_progress_file 0 || return 0
 	printf '[%s] %s %s\n' "$(progress_timestamp)" "$PROGRESS_KIND" "$PROGRESS_TEXT" >> "$CORE_PROGRESS_LOG" 2>/dev/null || true
 }
 
@@ -139,9 +171,7 @@ core_progress_command() {
 }
 
 core_progress_reset() {
-	mkdir -p "$(dirname "$CORE_PROGRESS_LOG")" 2>/dev/null || true
-	: > "$CORE_PROGRESS_LOG" 2>/dev/null || true
-	chmod 600 "$CORE_PROGRESS_LOG" 2>/dev/null || true
+	prepare_core_progress_file 1 || return 0
 	core_progress_log "info" "$1"
 }
 
@@ -154,6 +184,12 @@ file_size_bytes() {
 }
 
 emit_core_progress() {
+	if ! prepare_core_progress_file 0; then
+		printf '{"ok":true,"path":'
+		json_string "$CORE_PROGRESS_LOG"
+		printf ',"mtime":"","size":"0","text":""}\n'
+		return 0
+	fi
 	printf '{"ok":true,"path":'
 	json_string "$CORE_PROGRESS_LOG"
 	printf ',"mtime":'
@@ -412,12 +448,15 @@ run_service() {
 		json_error "service_unavailable" "init script not found: $INIT"
 		return 1
 	fi
-	if "$INIT" "$ACTION" >/tmp/luci-oxidns-service.out 2>&1; then
+	SERVICE_OUT="$(mktemp "$TMP_ROOT/luci-oxidns-service.XXXXXX")"
+	if "$INIT" "$ACTION" >"$SERVICE_OUT" 2>&1; then
+		rm -f "$SERVICE_OUT"
 		printf '{"ok":true,"action":'
 		json_string "$ACTION"
 		printf '}\n'
 	else
-		MSG="$(cat /tmp/luci-oxidns-service.out 2>/dev/null || true)"
+		MSG="$(read_error_detail_file "$SERVICE_OUT" 2>/dev/null || true)"
+		rm -f "$SERVICE_OUT"
 		json_error "service_failed" "${MSG:-service action failed}"
 		return 1
 	fi
@@ -447,8 +486,12 @@ emit_config_read() {
 }
 
 safe_single_line_value() {
-	printf '%s' "$1" | grep -q '[\r\n]' && return 1
-	return 0
+	printf '%s' "$1" | awk '
+		BEGIN { ok = 1; cr = sprintf("%c", 13) }
+		NR > 1 { ok = 0 }
+		index($0, cr) { ok = 0 }
+		END { exit ok ? 0 : 1 }
+	'
 }
 
 json_field_string() {
