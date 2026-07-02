@@ -37,6 +37,7 @@ var callCoreProgress = rpc.declare({
 var callCoreRemove = rpc.declare({
 	object: 'luci.oxidns',
 	method: 'core_remove',
+	params: [ 'remove_config', 'remove_workdir' ],
 	expect: {}
 });
 
@@ -329,10 +330,65 @@ function handleUploadInstall() {
 	});
 }
 
+function checked(id) {
+	var node = document.getElementById(id);
+	return !!(node && node.checked);
+}
+
 function handleRemove() {
-	if (!confirm(_('Remove the OxiDNS core binary? Configuration and runtime data will be preserved.')))
-		return;
-	return runCoreAction(_('Removing OxiDNS core...'), callCoreRemove);
+	return new Promise(function(resolve) {
+		var configPath = statusState.config_path || '-';
+		var workingDir = statusState.working_dir || '-';
+
+		ui.showModal(_('Remove OxiDNS Core'), [
+			E('p', {}, _('Remove the OxiDNS core binary and Web UI files.')),
+			E('p', { 'class': 'cbi-section-descr' },
+				_('Configuration and working directory data are preserved unless selected below.')),
+			E('div', { 'class': 'cbi-section' }, [
+				E('label', { 'class': 'cbi-value' }, [
+					E('input', {
+						'id': 'oxidns-remove-config',
+						'type': 'checkbox',
+						'style': 'margin-right: .5em;'
+					}),
+					_('Delete configuration file'),
+					E('div', { 'class': 'cbi-value-description' }, configPath)
+				]),
+				E('label', { 'class': 'cbi-value' }, [
+					E('input', {
+						'id': 'oxidns-remove-workdir',
+						'type': 'checkbox',
+						'style': 'margin-right: .5em;'
+					}),
+					_('Delete working directory'),
+					E('div', { 'class': 'cbi-value-description' }, workingDir)
+				])
+			]),
+			E('div', { 'class': 'right' }, [
+				E('button', {
+					'class': 'btn cbi-button cbi-button-neutral',
+					'click': function(ev) {
+						ev.preventDefault();
+						ui.hideModal();
+						resolve();
+					}
+				}, _('Cancel')),
+				' ',
+				E('button', {
+					'class': 'btn cbi-button cbi-button-negative',
+					'click': function(ev) {
+						ev.preventDefault();
+						var removeConfig = checked('oxidns-remove-config');
+						var removeWorkdir = checked('oxidns-remove-workdir');
+						ui.hideModal();
+						resolve(runCoreAction(_('Removing OxiDNS core...'), function() {
+							return callCoreRemove(removeConfig, removeWorkdir);
+						}));
+					}
+				}, _('Confirm'))
+			])
+		]);
+	});
 }
 
 function actionButton(label, handler, style) {

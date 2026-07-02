@@ -574,6 +574,71 @@ input_has_key() {
 	printf '%s' "$INPUT" | grep -q "\"$KEY\"[[:space:]]*:"
 }
 
+input_bool() {
+	KEY="$1"
+	INPUT="$2"
+	VALUE="$(input_value "$KEY" "$INPUT")"
+	case "$VALUE" in
+		1|true|TRUE|yes|YES|on|ON)
+			printf '1'
+			;;
+		*)
+			printf '0'
+			;;
+	esac
+}
+
+path_is_under() {
+	CHILD="$1"
+	PARENT="$2"
+	[ -n "$CHILD" ] && [ -n "$PARENT" ] || return 1
+	case "$CHILD" in
+		"$PARENT"/*)
+			return 0
+			;;
+	esac
+	return 1
+}
+
+oxidns_named_path() {
+	PATH_VALUE="$1"
+	BASE_NAME="$(basename "$PATH_VALUE" 2>/dev/null || printf '')"
+	DIR_NAME="$(dirname "$PATH_VALUE" 2>/dev/null || printf '')"
+	DIR_BASE="$(basename "$DIR_NAME" 2>/dev/null || printf '')"
+	case "$BASE_NAME:$DIR_BASE" in
+		*oxidns*|*:oxidns*)
+			return 0
+			;;
+	esac
+	return 1
+}
+
+safe_remove_config_path() {
+	PATH_VALUE="$1"
+	[ -n "$PATH_VALUE" ] || return 1
+	case "$PATH_VALUE" in
+		/*) ;;
+		*) return 1 ;;
+	esac
+	[ -d "$PATH_VALUE" ] && return 1
+	oxidns_named_path "$PATH_VALUE"
+}
+
+safe_remove_working_dir() {
+	PATH_VALUE="$1"
+	[ -n "$PATH_VALUE" ] || return 1
+	case "$PATH_VALUE" in
+		/*) ;;
+		*) return 1 ;;
+	esac
+	case "$PATH_VALUE" in
+		/|/bin|/dev|/etc|/lib|/mnt|/overlay|/proc|/rom|/root|/sbin|/sys|/tmp|/usr|/var|/www)
+			return 1
+			;;
+	esac
+	oxidns_named_path "$PATH_VALUE"
+}
+
 validate_config_file() {
 	FILE="$1"
 	load_settings
@@ -1598,8 +1663,11 @@ emit_core_upload_install() {
 }
 
 emit_core_remove() {
+	INPUT="$(cat)"
 	load_settings
 	core_progress_reset "remove OxiDNS core"
+	REMOVE_CONFIG="$(input_bool remove_config "$INPUT")"
+	REMOVE_WORKDIR="$(input_bool remove_workdir "$INPUT")"
 	INIT="$(init_script)"
 	if [ -x "$INIT" ]; then
 		core_progress_command "$INIT stop"
@@ -1611,12 +1679,66 @@ emit_core_remove() {
 	rm -f "$OXIDNS_BIN"
 	core_progress_command "rm -rf $WEBUI_DIR"
 	rm -rf "$WEBUI_DIR"
+	CONFIG_REMOVED=0
+	WORKDIR_REMOVED=0
+	CONFIG_BACKUP=""
+	if [ "$REMOVE_WORKDIR" = "1" ] && [ "$REMOVE_CONFIG" != "1" ] && path_is_under "$CONFIG_PATH" "$WORKING_DIR" && [ -e "$CONFIG_PATH" ]; then
+		CONFIG_BACKUP="$(mktemp "$TMP_ROOT/oxidns-config-preserve.XXXXXX")"
+		core_progress_command "preserve $CONFIG_PATH before removing $WORKING_DIR"
+		if cp "$CONFIG_PATH" "$CONFIG_BACKUP" 2>/dev/null; then
+			:
+		else
+			rm -f "$CONFIG_BACKUP"
+			CONFIG_BACKUP=""
+			core_progress_log "error" "failed to preserve config before removing working directory"
+			json_detailed_error "config_preserve_failed" "failed to preserve configuration before removing working directory" "remove_working_dir" "config=$CONFIG_PATH working_dir=$WORKING_DIR"
+			return 1
+		fi
+	fi
+	if [ "$REMOVE_CONFIG" = "1" ]; then
+		if ! safe_remove_config_path "$CONFIG_PATH"; then
+			core_progress_log "error" "refusing unsafe config path: $CONFIG_PATH"
+			json_detailed_error "unsafe_config_path" "refusing to delete unsafe configuration path" "remove_config" "config=$CONFIG_PATH"
+			return 1
+		fi
+		core_progress_command "rm -f $CONFIG_PATH"
+		rm -f "$CONFIG_PATH"
+		CONFIG_REMOVED=1
+	fi
+	if [ "$REMOVE_WORKDIR" = "1" ]; then
+		if ! safe_remove_working_dir "$WORKING_DIR"; then
+			rm -f "$CONFIG_BACKUP" 2>/dev/null || true
+			core_progress_log "error" "refusing unsafe working directory: $WORKING_DIR"
+			json_detailed_error "unsafe_working_dir" "refusing to delete unsafe working directory" "remove_working_dir" "working_dir=$WORKING_DIR"
+			return 1
+		fi
+		core_progress_command "rm -rf $WORKING_DIR"
+		rm -rf "$WORKING_DIR"
+		WORKDIR_REMOVED=1
+	fi
+	if [ -n "$CONFIG_BACKUP" ] && [ -f "$CONFIG_BACKUP" ]; then
+		core_progress_command "restore preserved config to $CONFIG_PATH"
+		mkdir -p "$(dirname "$CONFIG_PATH")"
+		mv "$CONFIG_BACKUP" "$CONFIG_PATH"
+	fi
 	core_progress_log "success" "core removed"
 	printf '{"ok":true,"action":"remove","binary_path":'
 	json_string "$OXIDNS_BIN"
 	printf ',"webui_path":'
 	json_string "$WEBUI_DIR"
-	printf ',"config_preserved":true,"working_dir_preserved":true}\n'
+	printf ',"config_path":'
+	json_string "$CONFIG_PATH"
+	printf ',"working_dir":'
+	json_string "$WORKING_DIR"
+	printf ',"config_removed":'
+	json_bool "$CONFIG_REMOVED"
+	printf ',"working_dir_removed":'
+	json_bool "$WORKDIR_REMOVED"
+	printf ',"config_preserved":'
+	if [ "$CONFIG_REMOVED" = "1" ]; then json_bool 0; else json_bool 1; fi
+	printf ',"working_dir_preserved":'
+	if [ "$WORKDIR_REMOVED" = "1" ]; then json_bool 0; else json_bool 1; fi
+	printf '}\n'
 }
 
 case "${1:-}" in
@@ -1627,7 +1749,7 @@ case "${1:-}" in
 		printf '"core_reinstall":{},'
 		printf '"core_upload_install":{"path":"string"},'
 		printf '"core_progress":{},'
-		printf '"core_remove":{},'
+		printf '"core_remove":{"remove_config":"boolean","remove_workdir":"boolean"},'
 		printf '"service_start":{},'
 		printf '"service_stop":{},'
 		printf '"service_restart":{},'
