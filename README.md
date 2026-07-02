@@ -13,7 +13,21 @@
 
 ## 安装 LuCI 插件
 
-从本仓库 Release 下载对应的 LuCI 包，然后安装：
+推荐在 OpenWrt 上以 root 用户执行官方安装脚本：
+
+```sh
+curl -fsSL https://oxidns.org/install.sh | sh
+```
+
+如果系统没有 `curl`，也可以使用 `wget`：
+
+```sh
+wget -O- https://oxidns.org/install.sh | sh
+```
+
+脚本会检测 OpenWrt 包管理器，从 `luci-app-oxidns` Releases 读取最新包，按系统选择 `.ipk` 或 `.apk`，安装 `luci-app-oxidns` 和可选简体中文语言包，并自动重启 `rpcd`。更多脚本选项见 <https://oxidns.org/openwrt>。
+
+也可以从本仓库 Release 下载对应的 LuCI 包后手动安装：
 
 ```sh
 opkg install ./luci-app-oxidns_0.1.0-r1_all.ipk

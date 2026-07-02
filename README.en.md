@@ -13,7 +13,21 @@ This app does not embed the OxiDNS core binary and no longer manages a separate 
 
 ## Install The LuCI App
 
-Download the LuCI release artifact and install it on OpenWrt:
+On OpenWrt, the recommended path is the official one-command installer. Run it as root:
+
+```sh
+curl -fsSL https://oxidns.org/install.sh | sh
+```
+
+If `curl` is not installed, use `wget`:
+
+```sh
+wget -O- https://oxidns.org/install.sh | sh
+```
+
+The script detects the OpenWrt package manager, reads the latest package from `luci-app-oxidns` Releases, selects `.ipk` or `.apk` for the system, installs `luci-app-oxidns` plus the optional Simplified Chinese translation package, and restarts `rpcd`. See <https://oxidns.org/openwrt> for more script options.
+
+You can also download the LuCI release artifact and install it manually:
 
 ```sh
 opkg install ./luci-app-oxidns_0.1.0-r1_all.ipk
