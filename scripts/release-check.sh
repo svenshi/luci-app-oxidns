@@ -36,40 +36,6 @@ apk_data_has_checksum() {
 	gzip -dc "$1" | grep -q 'APK-TOOLS.checksum.SHA1='
 }
 
-ipk_has_member() {
-	ar -t "$1" | awk -v member="$2" '
-		$0 == member { found = 1 }
-		END { exit found ? 0 : 1 }
-	'
-}
-
-ipk_nested_has_member() {
-	outer="$1"
-	inner="$2"
-	member="$3"
-	nested="$(mktemp "${TMPDIR:-/tmp}/luci-app-oxidns-nested.XXXXXX")"
-	if ! ar -p "$outer" "$inner" > "$nested" 2>/dev/null; then
-		rm -f "$nested"
-		return 1
-	fi
-
-	if tar -tzf "$nested" | awk -v member="$member" '
-		{
-			path = $0;
-			sub(/^\.\//, "", path);
-			if (path == member)
-				found = 1;
-		}
-		END { exit found ? 0 : 1 }
-	'; then
-		rm -f "$nested"
-		return 0
-	fi
-
-	rm -f "$nested"
-	return 1
-}
-
 tar_nested_has_member() {
 	outer="$1"
 	inner="$2"
@@ -101,7 +67,6 @@ tar_nested_has_member() {
 need_cmd awk
 need_cmd gzip
 need_cmd grep
-need_cmd ar
 need_cmd sha256sum
 need_cmd tar
 
@@ -109,14 +74,14 @@ scripts/check.sh
 scripts/integration-check.sh
 scripts/build-luci-package.sh "$VERSION" "$OUT_DIR"
 
-ipk_has_member "$OUT_DIR/${PKG_BASE}.ipk" debian-binary
-ipk_has_member "$OUT_DIR/${PKG_BASE}.ipk" control.tar.gz
-ipk_has_member "$OUT_DIR/${PKG_BASE}.ipk" data.tar.gz
-ipk_nested_has_member "$OUT_DIR/${PKG_BASE}.ipk" control.tar.gz postinst
-ipk_nested_has_member "$OUT_DIR/${PKG_BASE}.ipk" control.tar.gz postrm
-ipk_nested_has_member "$OUT_DIR/${PKG_BASE}.ipk" data.tar.gz etc/init.d/oxidns
-ipk_has_member "$OUT_DIR/${I18N_BASE}.ipk" data.tar.gz
-ipk_nested_has_member "$OUT_DIR/${I18N_BASE}.ipk" control.tar.gz postinst
+tar_has_member "$OUT_DIR/${PKG_BASE}.ipk" control.tar.gz
+tar_has_member "$OUT_DIR/${PKG_BASE}.ipk" data.tar.gz
+tar_nested_has_member "$OUT_DIR/${PKG_BASE}.ipk" control.tar.gz postinst
+tar_nested_has_member "$OUT_DIR/${PKG_BASE}.ipk" control.tar.gz postrm
+tar_nested_has_member "$OUT_DIR/${PKG_BASE}.ipk" data.tar.gz etc/init.d/oxidns
+tar_has_member "$OUT_DIR/${I18N_BASE}.ipk" control.tar.gz
+tar_has_member "$OUT_DIR/${I18N_BASE}.ipk" data.tar.gz
+tar_nested_has_member "$OUT_DIR/${I18N_BASE}.ipk" control.tar.gz postinst
 tar_has_member "$OUT_DIR/${PKG_BASE}.apk" .PKGINFO
 tar_member_contains "$OUT_DIR/${PKG_BASE}.apk" .PKGINFO '^arch = noarch$'
 tar_member_contains "$OUT_DIR/${PKG_BASE}.apk" .PKGINFO '^datahash = [0-9a-f][0-9a-f]*$'
