@@ -1258,10 +1258,57 @@ validate_safe_archive() {
 	return 0
 }
 
+valid_ipv4() {
+	printf '%s' "$1" | awk -F. '
+		NF != 4 { exit 1 }
+		{
+			for (i = 1; i <= 4; i++) {
+				if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255)
+					exit 1;
+			}
+		}
+	'
+}
+
+lan_ipv4_from_uci() {
+	command -v uci >/dev/null 2>&1 || return 1
+	LAN_IP="$(uci -q get network.lan.ipaddr 2>/dev/null || true)"
+	if valid_ipv4 "$LAN_IP"; then
+		printf '%s' "$LAN_IP"
+		return 0
+	fi
+	return 1
+}
+
+lan_ipv4_from_interface() {
+	IFACE="${1:-br-lan}"
+	command -v ip >/dev/null 2>&1 || return 1
+	ip -4 addr show dev "$IFACE" 2>/dev/null | awk '
+		/ inet / {
+			addr = $2;
+			sub(/\/.*/, "", addr);
+			print addr;
+			exit;
+		}
+	'
+}
+
+default_api_listen() {
+	LAN_IP="$(lan_ipv4_from_uci 2>/dev/null || true)"
+	if [ -z "$LAN_IP" ]; then
+		LAN_IP="$(lan_ipv4_from_interface br-lan 2>/dev/null || true)"
+	fi
+	if ! valid_ipv4 "$LAN_IP"; then
+		LAN_IP="0.0.0.0"
+	fi
+	printf '%s:9199' "$LAN_IP"
+}
+
 write_openwrt_default_config() {
 	SOURCE_FILE="$1"
 	OUT_FILE="$2"
-	awk '
+	DEFAULT_LISTEN="$(default_api_listen)"
+	awk -v default_listen="$DEFAULT_LISTEN" '
 		BEGIN {
 			top = "";
 			second = "";
@@ -1287,7 +1334,7 @@ write_openwrt_default_config() {
 			next;
 		}
 		top == "api" && second == "http" && /^[[:space:]][[:space:]][[:space:]][[:space:]]listen:[[:space:]]*/ {
-			print "    listen: \"0.0.0.0:9199\"";
+			print "    listen: \"" default_listen "\"";
 			listen_done = 1;
 			next;
 		}
