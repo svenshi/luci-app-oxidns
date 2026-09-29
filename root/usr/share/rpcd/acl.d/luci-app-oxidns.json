@@ -13,6 +13,10 @@
 			}
 		},
 		"write": {
+			"cgi-io": [ "upload" ],
+			"file": {
+				"/tmp/oxidns-core-upload-*": [ "write" ]
+			},
 			"ubus": {
 				"luci.oxidns": [
 					"core_install",
