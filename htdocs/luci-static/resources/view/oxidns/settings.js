@@ -20,7 +20,8 @@ var callSettingsSave = rpc.declare({
 		'download_proxy',
 		'github_token',
 		'clear_download_proxy',
-		'clear_github_token'
+		'clear_github_token',
+		'log_syslog'
 	],
 	expect: {}
 });
@@ -130,7 +131,8 @@ function saveSettings() {
 		download_proxy: field('oxidns-setting-download-proxy'),
 		github_token: field('oxidns-setting-github-token'),
 		clear_download_proxy: checked('oxidns-setting-clear-download-proxy'),
-		clear_github_token: checked('oxidns-setting-clear-github-token')
+		clear_github_token: checked('oxidns-setting-clear-github-token'),
+		log_syslog: checked('oxidns-setting-log-syslog') ? '1' : '0'
 	};
 
 	ui.showModal(_('OxiDNS'), [
@@ -145,7 +147,8 @@ function saveSettings() {
 		payload.download_proxy,
 		payload.github_token,
 		payload.clear_download_proxy,
-		payload.clear_github_token
+		payload.clear_github_token,
+		payload.log_syslog
 	), null).then(function(result) {
 		ui.hideModal();
 		if (!result || result.ok === false) {
@@ -153,6 +156,9 @@ function saveSettings() {
 			return;
 		}
 		setStatus(_('Settings saved.'), false);
+		var logSyslog = document.getElementById('oxidns-setting-log-syslog');
+		if (logSyslog)
+			logSyslog.checked = result.log_syslog !== false;
 		var proxy = document.getElementById('oxidns-setting-download-proxy');
 		if (proxy)
 			proxy.value = result.download_proxy || '';
@@ -193,6 +199,15 @@ return view.extend({
 					row(_('Core bundle'), bundleSelect('oxidns-setting-core-bundle', settings.core_bundle || 'full')),
 					row(_('Config path'), textInput('oxidns-setting-config-path', settings.config_path || '/etc/oxidns/config.yaml')),
 					row(_('Working directory'), textInput('oxidns-setting-working-dir', settings.working_dir || '/var/lib/oxidns')),
+					row(_('Write to system log'), E('div', {}, [
+						E('input', {
+							'id': 'oxidns-setting-log-syslog',
+							'type': 'checkbox',
+							'checked': settings.log_syslog !== false ? 'checked' : null
+						}),
+						E('div', { 'class': 'cbi-value-description' },
+							_('When disabled, the LuCI log page no longer shows new runtime logs. Restart OxiDNS after changing this setting.'))
+					])),
 					row(_('Download proxy'), secretSettingInput(
 						textInput('oxidns-setting-download-proxy', settings.download_proxy || '', false, _('Example: http://127.0.0.1:7890')),
 						'oxidns-setting-download-proxy-description',

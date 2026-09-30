@@ -379,6 +379,12 @@ msgstr "正在等待命令输出..."
 msgid "Working directory"
 msgstr "工作目录"
 
+msgid "Write to system log"
+msgstr "写入系统日志"
+
+msgid "When disabled, the LuCI log page no longer shows new runtime logs. Restart OxiDNS after changing this setting."
+msgstr "关闭后，LuCI 日志页不再显示新的运行日志；修改后需重启 OxiDNS 服务。"
+
 msgid "YAML"
 msgstr "YAML"
 

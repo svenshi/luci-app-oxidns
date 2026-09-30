@@ -107,3 +107,4 @@ The router must be able to reach GitHub Releases and release archives directly. 
 - The `Core` page handles first install, upload install, and repair reinstall only, not version upgrades.
 - The `Overview` WebUI entry is generated from the HTTP listen address in the config file. If it listens on `127.0.0.1`, LuCI keeps the link and shows a hint that local access or an SSH tunnel is required.
 - The log page reads OxiDNS service stdout/stderr output from OpenWrt `logread`.
+- `Settings` includes a "Write to system log" switch, enabled by default. Restart OxiDNS manually after saving a change. When disabled, the log page no longer shows new runtime logs.

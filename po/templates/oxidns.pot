@@ -374,6 +374,12 @@ msgstr ""
 msgid "Working directory"
 msgstr ""
 
+msgid "Write to system log"
+msgstr ""
+
+msgid "When disabled, the LuCI log page no longer shows new runtime logs. Restart OxiDNS after changing this setting."
+msgstr ""
+
 msgid "YAML"
 msgstr ""
 

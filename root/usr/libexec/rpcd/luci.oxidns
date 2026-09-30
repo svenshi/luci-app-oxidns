@@ -24,6 +24,7 @@ WORKING_DIR="$DEFAULT_WORKING_DIR"
 SERVICE_NAME="$DEFAULT_SERVICE_NAME"
 CORE_REPOSITORY="$DEFAULT_CORE_REPOSITORY"
 CORE_BUNDLE="$DEFAULT_CORE_BUNDLE"
+LOG_SYSLOG=1
 DOWNLOAD_PROXY=""
 GITHUB_TOKEN=""
 DOWNLOAD_ERROR=""
@@ -275,6 +276,11 @@ load_settings() {
 	WORKING_DIR="$(uci_get working_dir "$DEFAULT_WORKING_DIR")"
 	CORE_REPOSITORY="$(uci_get core_repository "$DEFAULT_CORE_REPOSITORY")"
 	CORE_BUNDLE="$(uci_get core_bundle "$DEFAULT_CORE_BUNDLE")"
+	LOG_SYSLOG="$(uci_get log_syslog 1)"
+	case "$LOG_SYSLOG" in
+		0|off|false|no) LOG_SYSLOG=0 ;;
+		*) LOG_SYSLOG=1 ;;
+	esac
 	DOWNLOAD_PROXY="$(uci_get download_proxy '')"
 	GITHUB_TOKEN="$(uci_get github_token '')"
 }
@@ -608,6 +614,8 @@ emit_settings_read() {
 	json_field_string config_path "$CONFIG_PATH"
 	printf ','
 	json_field_string working_dir "$WORKING_DIR"
+	printf ',"log_syslog":'
+	json_bool "$LOG_SYSLOG"
 	printf ','
 	json_field_string download_proxy "$DOWNLOAD_PROXY"
 	printf ','
@@ -650,6 +658,17 @@ emit_settings_save() {
 	[ -n "$BUNDLE_VALUE" ] || BUNDLE_VALUE="$DEFAULT_CORE_BUNDLE"
 	[ -n "$CONFIG_VALUE" ] || CONFIG_VALUE="$DEFAULT_CONFIG_PATH"
 	[ -n "$WORKING_VALUE" ] || WORKING_VALUE="$DEFAULT_WORKING_DIR"
+	LOG_SYSLOG_VALUE="$LOG_SYSLOG"
+	if input_has_key log_syslog "$INPUT"; then
+		LOG_SYSLOG_VALUE="$(input_value log_syslog "$INPUT")"
+		case "$LOG_SYSLOG_VALUE" in
+			0|1) ;;
+			*)
+				json_error "invalid_log_syslog" "log_syslog must be 0 or 1"
+				return 1
+				;;
+		esac
+	fi
 
 	case "$REPOSITORY_VALUE" in
 		*/*) ;;
@@ -684,6 +703,7 @@ emit_settings_save() {
 	uci -q set "oxidns.main.core_bundle=$BUNDLE_VALUE"
 	uci -q set "oxidns.main.config_path=$CONFIG_VALUE"
 	uci -q set "oxidns.main.working_dir=$WORKING_VALUE"
+	uci -q set "oxidns.main.log_syslog=$LOG_SYSLOG_VALUE"
 	uci -q delete oxidns.main.api_base_url >/dev/null 2>&1 || true
 	uci -q delete oxidns.main.install_mode >/dev/null 2>&1 || true
 	uci -q delete oxidns.main.service_name >/dev/null 2>&1 || true
@@ -1901,7 +1921,7 @@ case "${1:-}" in
 		printf '"config_validate":{"content":"string"},'
 		printf '"config_save":{"content":"string","base_mtime":"string","restart":"boolean"},'
 		printf '"settings_read":{},'
-		printf '"settings_save":{"core_repository":"string","core_bundle":"string","config_path":"string","working_dir":"string","download_proxy":"string","github_token":"string","clear_download_proxy":"boolean","clear_github_token":"boolean"},'
+		printf '"settings_save":{"core_repository":"string","core_bundle":"string","config_path":"string","working_dir":"string","download_proxy":"string","github_token":"string","clear_download_proxy":"boolean","clear_github_token":"boolean","log_syslog":"string"},'
 		printf '"logs_recent":{"limit":"number"}'
 		printf '}\n'
 		;;
