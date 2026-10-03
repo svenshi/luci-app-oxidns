@@ -76,7 +76,7 @@ printf '%s\n' \
 	'procd_open_instance() { :; }' \
 	'procd_close_instance() { :; }' \
 	'procd_set_param() { printf "%s\n" "$*" >> "$PROCD_ARGS"; }' \
-	'. /etc/init.d/oxidns' \
+	'. "'"$PWD"'/root/etc/init.d/oxidns"' \
 	'PROG="'"$INIT_STUB_DIR"'/oxidns"' \
 	'start_service' > "$INIT_STUB_DIR/drive.sh"
 INIT_STUB_ARGS="$INIT_STUB_DIR/procd-args"
