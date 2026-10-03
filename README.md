@@ -108,3 +108,4 @@ LuCI 会按当前设备 CPU 架构选择 OxiDNS Linux musl release archive，例
 - `Overview` 的 WebUI 入口根据配置文件中的 HTTP listen 地址生成；如果监听 `127.0.0.1`，LuCI 会保留链接并提示需要本机访问或 SSH 隧道。
 - 日志页读取 OpenWrt `logread` 中的 OxiDNS 服务 stdout/stderr 输出。
 - 可在 `Settings` 中关闭“写入系统日志”（默认开启），保存后需重启 OxiDNS 才会生效。`Overview` 的 Restart 已改为依次执行 stop 和 start 两个独立动作，因为 `rc.common` 的 `restart` 在同一进程内持锁完成 kill 和实例重新声明，改动不会生效（见 `issues.md`）。
+- `Overview` 上的服务操作（Start / Stop / Restart / Enable / Disable）始终会向系统日志写入一条以 `luci-app-oxidns` 为 tag 的审计记录，包含动作和成功或失败结果。内核未安装、init 脚本缺失或操作失败时同样会记录。这些记录可在 `logread` 原始输出和 LuCI 系统日志页看到；由于日志页只显示 `oxidns[PID]:` 格式的内核输出，审计记录不会出现在 OxiDNS 日志页。

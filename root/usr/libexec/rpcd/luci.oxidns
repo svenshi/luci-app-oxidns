@@ -530,6 +530,12 @@ emit_status() {
 	printf '}\n'
 }
 
+syslog_service_event() {
+	command -v logger >/dev/null 2>&1 || return 0
+	logger -t luci-app-oxidns "$1" >/dev/null 2>&1 || true
+	return 0
+}
+
 # rc.common's restart does not reliably re-declare the procd instance, so a
 # changed log_syslog keeps the previous stdout/stderr setting. Invoking stop
 # and start as separate calls does apply it. See issues.md.
@@ -551,24 +557,29 @@ run_service() {
 	case "$ACTION" in
 		start|restart|enable)
 			if [ ! -x "$OXIDNS_BIN" ]; then
+				syslog_service_event "service $ACTION ignored: OxiDNS core is not installed"
 				json_error "core_not_installed" "Install the OxiDNS core before using service controls"
 				return 1
 			fi
 			;;
 	esac
 	if [ ! -x "$INIT" ]; then
+		syslog_service_event "service $ACTION failed: init script not found: $INIT"
 		json_error "service_unavailable" "init script not found: $INIT"
 		return 1
 	fi
 	SERVICE_OUT="$(mktemp "$TMP_ROOT/luci-oxidns-service.XXXXXX")"
 	if run_init_action "$INIT" "$ACTION" >"$SERVICE_OUT" 2>&1; then
 		rm -f "$SERVICE_OUT"
+		syslog_service_event "service $ACTION succeeded"
 		printf '{"ok":true,"action":'
 		json_string "$ACTION"
 		printf '}\n'
 	else
 		MSG="$(read_error_detail_file "$SERVICE_OUT" 2>/dev/null || true)"
 		rm -f "$SERVICE_OUT"
+		SHORT_MSG="$(printf '%.200s' "${MSG:-service action failed}")"
+		syslog_service_event "service $ACTION failed: $SHORT_MSG"
 		json_error "service_failed" "${MSG:-service action failed}"
 		return 1
 	fi

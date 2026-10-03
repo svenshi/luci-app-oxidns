@@ -246,6 +246,25 @@ EOF
 	rm -rf "$REMOVE_PREFLIGHT_DIR"
 	rm -rf "$FAKE_UCI_DIR"
 printf '%s' '{"limit":"20"}' | root/usr/libexec/rpcd/luci.oxidns call logs_recent | json_ok "v.ok === true && v.source === 'logread' && Array.isArray(v.lines) && !('entries' in v)"
+SERVICE_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-service-log-test.XXXXXX")"
+# Records only the last argument, which is the message passed after `-t <tag>`.
+cat > "$SERVICE_LOG_DIR/logger" <<'EOF'
+#!/bin/sh
+for last; do :; done
+printf '%s\n' "$last" >> "$FAKE_LOGGER_OUT"
+EOF
+chmod 755 "$SERVICE_LOG_DIR/logger"
+assert_service_event() {
+	: > "$SERVICE_LOG_DIR/events.log"
+	printf '%s' '{}' |
+		PATH="$SERVICE_LOG_DIR:$PATH" FAKE_LOGGER_OUT="$SERVICE_LOG_DIR/events.log" \
+		root/usr/libexec/rpcd/luci.oxidns call "service_$1" |
+		json_ok "v.ok === false && v.code === '$2'"
+	test "$(cat "$SERVICE_LOG_DIR/events.log")" = "$3"
+}
+assert_service_event start core_not_installed "service start ignored: OxiDNS core is not installed"
+assert_service_event stop service_unavailable "service stop failed: init script not found: /etc/init.d/oxidns"
+rm -rf "$SERVICE_LOG_DIR"
 
 DIST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/luci-app-oxidns-dist.XXXXXX")"
 scripts/build-luci-package.sh 0.1.0 "$DIST_DIR" >/dev/null
