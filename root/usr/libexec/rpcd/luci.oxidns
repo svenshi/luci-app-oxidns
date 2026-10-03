@@ -530,6 +530,20 @@ emit_status() {
 	printf '}\n'
 }
 
+# rc.common's restart does not reliably re-declare the procd instance, so a
+# changed log_syslog keeps the previous stdout/stderr setting. Invoking stop
+# and start as separate calls does apply it. See issues.md.
+run_init_action() {
+	case "$2" in
+		restart)
+			"$1" stop && "$1" start
+			;;
+		*)
+			"$1" "$2"
+			;;
+	esac
+}
+
 run_service() {
 	load_settings
 	ACTION="$1"
@@ -547,7 +561,7 @@ run_service() {
 		return 1
 	fi
 	SERVICE_OUT="$(mktemp "$TMP_ROOT/luci-oxidns-service.XXXXXX")"
-	if "$INIT" "$ACTION" >"$SERVICE_OUT" 2>&1; then
+	if run_init_action "$INIT" "$ACTION" >"$SERVICE_OUT" 2>&1; then
 		rm -f "$SERVICE_OUT"
 		printf '{"ok":true,"action":'
 		json_string "$ACTION"

@@ -62,6 +62,36 @@ assert_unsafe_upload_rejected() {
 		json_ok "v.ok === false && v.code === 'uploaded_archive_unsafe'"
 }
 
+INIT_STUB_DIR="$(mktemp -d "${TMPDIR:-/tmp}/oxidns-init-stub.XXXXXX")"
+printf '#!/bin/sh\nsleep 30\n' > "$INIT_STUB_DIR/oxidns"
+: > "$INIT_STUB_DIR/config.yaml"
+chmod 755 "$INIT_STUB_DIR/oxidns"
+# Drive start_service from the real init script and record the procd params it sets.
+printf '%s\n' \
+	'set -eu' \
+	'PROCD_ARGS="'"$INIT_STUB_DIR"'/procd-args"' \
+	'config_load() { :; }' \
+	'config_get() { case "$1" in CONFIG_PATH) CONFIG_PATH="'"$INIT_STUB_DIR"'/config.yaml" ;; WORKING_DIR) WORKING_DIR="'"$INIT_STUB_DIR"'" ;; esac; }' \
+	'config_get_bool() { eval "$1=\$FAKE_UCI_VALUE"; }' \
+	'procd_open_instance() { :; }' \
+	'procd_close_instance() { :; }' \
+	'procd_set_param() { printf "%s\n" "$*" >> "$PROCD_ARGS"; }' \
+	'. /etc/init.d/oxidns' \
+	'PROG="'"$INIT_STUB_DIR"'/oxidns"' \
+	'start_service' > "$INIT_STUB_DIR/drive.sh"
+INIT_STUB_ARGS="$INIT_STUB_DIR/procd-args"
+init_log_destination_args() {
+	: > "$INIT_STUB_ARGS"
+	FAKE_UCI_VALUE="$1" /bin/sh "$INIT_STUB_DIR/drive.sh"
+}
+init_log_destination_args 1
+grep -qx 'stdout 1' "$INIT_STUB_ARGS"
+grep -qx 'stderr 1' "$INIT_STUB_ARGS"
+init_log_destination_args 0
+grep -qx 'stdout 0' "$INIT_STUB_ARGS"
+grep -qx 'stderr 0' "$INIT_STUB_ARGS"
+rm -rf "$INIT_STUB_DIR"
+
 scripts/check.sh
 
 root/usr/libexec/rpcd/luci.oxidns list | json_ok "'status' in v && 'core_install' in v && 'core_reinstall' in v && 'core_upload_install' in v && 'core_progress' in v && 'core_remove' in v && 'logs_recent' in v && 'settings_read' in v && !('config_basic_read' in v) && !('config_basic_save' in v)"
