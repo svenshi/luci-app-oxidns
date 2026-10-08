@@ -536,13 +536,52 @@ syslog_service_event() {
 	return 0
 }
 
-# rc.common's restart does not reliably re-declare the procd instance, so a
-# changed log_syslog keeps the previous stdout/stderr setting. Invoking stop
-# and start as separate calls does apply it. See issues.md.
+# procd stop is asynchronous. Starting before the old instance is removed
+# reuses it, and procd's instance update retains its stdout/stderr settings.
+stop_service_and_wait() {
+	local init_path="$1"
+	local stop_deadline service_json root_type service_type instances_type instances
+	if ! command -v ubus >/dev/null 2>&1 || ! command -v jsonfilter >/dev/null 2>&1; then
+		printf 'cannot wait for OxiDNS to stop: ubus and jsonfilter are required\n' >&2
+		return 1
+	fi
+	"$init_path" stop || return 1
+	stop_deadline=$(($(date +%s) + 10))
+	while :; do
+		if ! service_json="$(ubus -t 2 call service list '{"name":"oxidns"}' 2>/dev/null)" ||
+			! root_type="$(printf '%s' "$service_json" | jsonfilter -t '@' 2>/dev/null)"; then
+			printf 'failed to query OxiDNS service state while stopping\n' >&2
+			return 1
+		fi
+		if [ "$root_type" != object ]; then
+			printf 'invalid OxiDNS service state while stopping\n' >&2
+			return 1
+		fi
+		service_type="$(printf '%s' "$service_json" | jsonfilter -t '@.oxidns' 2>/dev/null || true)"
+		instances_type="$(printf '%s' "$service_json" | jsonfilter -t '@.oxidns.instances' 2>/dev/null || true)"
+		case "$service_type:$instances_type" in
+			:|object:|object:object) ;;
+			*) printf 'invalid OxiDNS service instance state while stopping\n' >&2; return 1 ;;
+		esac
+		# Missing service/instances and an empty instances object are all stopped.
+		# Keep waiting even for running:false while the old instance still exists.
+		instances="$(printf '%s' "$service_json" | jsonfilter -t '@.oxidns.instances[*]' 2>/dev/null || true)"
+		[ -n "$instances" ] || return 0
+		if [ "$(date +%s)" -ge "$stop_deadline" ]; then
+			printf 'timed out waiting for the old OxiDNS service instance to be removed\n' >&2
+			return 1
+		fi
+		sleep 1
+	done
+}
+
 run_init_action() {
 	case "$2" in
 		restart)
-			"$1" stop && "$1" start
+			stop_service_and_wait "$1" && "$1" start
+			;;
+		stop)
+			stop_service_and_wait "$1"
 			;;
 		*)
 			"$1" "$2"
@@ -949,7 +988,7 @@ emit_config_save() {
 			json_error "service_unavailable" "configuration saved, but init script was not found"
 			return 1
 		fi
-		if "$INIT" restart >"$SERVICE_OUT" 2>&1; then
+		if run_init_action "$INIT" restart >"$SERVICE_OUT" 2>&1; then
 			RESTART_STATUS="requested"
 			MESSAGE="configuration saved and service restarted"
 		else
@@ -1524,7 +1563,14 @@ install_core_from_release() {
 	INIT="$(init_script)"
 	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
 		core_progress_command "$INIT stop"
-		"$INIT" stop >/dev/null 2>&1 || true
+		SERVICE_OUT="$(mktemp "$TMP_ROOT/oxidns-service.XXXXXX")"
+		if ! run_init_action "$INIT" stop >"$SERVICE_OUT" 2>&1; then
+			MSG="$(read_error_detail_file "$SERVICE_OUT" 2>/dev/null || true)"
+			rm -f "$SERVICE_OUT"
+			core_install_error "service_stop_failed" "core was not replaced because the service could not be stopped" "stop_service" "${MSG:-service stop failed}"
+			return 1
+		fi
+		rm -f "$SERVICE_OUT"
 	fi
 
 	core_progress_command "install -m 755 $UNPACK_DIR/oxidns $OXIDNS_BIN"
@@ -1713,7 +1759,14 @@ install_uploaded_core_from_unpack() {
 	INIT="$(init_script)"
 	if [ "$SERVICE_WAS_RUNNING" = "1" ] && [ -x "$INIT" ]; then
 		core_progress_command "$INIT stop"
-		"$INIT" stop >/dev/null 2>&1 || true
+		SERVICE_OUT="$(mktemp "$TMP_ROOT/oxidns-service.XXXXXX")"
+		if ! run_init_action "$INIT" stop >"$SERVICE_OUT" 2>&1; then
+			MSG="$(read_error_detail_file "$SERVICE_OUT" 2>/dev/null || true)"
+			rm -f "$SERVICE_OUT"
+			upload_core_error "service_stop_failed" "core was not replaced because the service could not be stopped" "stop_service" "${MSG:-service stop failed}"
+			return 1
+		fi
+		rm -f "$SERVICE_OUT"
 	fi
 
 	core_progress_command "install -m 755 $UNPACK_DIR/oxidns $OXIDNS_BIN"
