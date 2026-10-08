@@ -72,4 +72,5 @@ sh -n root/usr/libexec/rpcd/luci.oxidns
 sh -n root/etc/init.d/oxidns
 sh -n scripts/build-luci-package.sh
 sh -n scripts/integration-check.sh
+sh -n scripts/service-check.sh
 sh -n scripts/release-check.sh
