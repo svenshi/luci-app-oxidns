@@ -4,7 +4,7 @@ Language: [中文](./README.md) | English
 
 `luci-app-oxidns` is the LuCI management app for OxiDNS on OpenWrt. After installation, LuCI adds `Services -> OxiDNS` pages for installing the OxiDNS core binary, managing the OpenWrt service, editing configuration, and viewing logs.
 
-This app does not embed the OxiDNS core binary and no longer manages a separate OpenWrt `oxidns` runtime package. LuCI downloads the official OxiDNS GitHub Release archive, verifies the SHA256 digest, and installs the binary as an OpenWrt service. Future OxiDNS core upgrades are handled by OxiDNS itself; LuCI does not provide core-upgrade or LuCI-app self-upgrade buttons.
+This repository provides only a simple implementation for installing and managing OxiDNS. Other developers are welcome to extend it or build alternative LuCI plugins that cover the existing functionality and offer more features.
 
 ## What To Install
 
