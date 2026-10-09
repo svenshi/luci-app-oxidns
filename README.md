@@ -4,7 +4,7 @@
 
 `luci-app-oxidns` 是 OxiDNS 的 OpenWrt / LuCI 管理插件。安装后，LuCI 会出现 `Services -> OxiDNS` 页面，用来安装 OxiDNS 内核二进制、管理 OpenWrt 服务、编辑配置和查看日志。
 
-这个插件不内置 OxiDNS 内核，也不再管理独立的 OpenWrt `oxidns` 包。LuCI 负责从 OxiDNS 官方 GitHub Releases 下载 release archive，校验 SHA256 digest，并把二进制安装为 OpenWrt 服务。后续 OxiDNS 内核升级由 OxiDNS 自带的升级功能完成，LuCI 不提供内核升级或 LuCI app 自升级按钮。
+本仓库仅提供用于安装和管理 OxiDNS 的简单实现。欢迎其他开发者在此基础上扩展，或重新实现覆盖现有功能、提供更多功能的 LuCI 插件。
 
 ## 你需要安装什么
 
