@@ -223,7 +223,10 @@ return view.extend({
 						_('Clear configured GitHub token'),
 						settings.github_token_set))
 				]),
-				E('div', { 'class': 'cbi-button-row' }, [
+				E('div', {
+					'class': 'cbi-button-row',
+					'style': 'padding-inline: var(--section-inset, .75em);'
+				}, [
 					E('button', {
 						'class': 'btn cbi-button cbi-button-positive',
 						'click': function(ev) {

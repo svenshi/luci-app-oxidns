@@ -197,9 +197,10 @@ function showCoreProgressModal(label) {
 			'max-height: 44vh',
 			'overflow: auto',
 			'padding: 1em',
-			'border: 1px solid #ccc',
-			'background: #111',
-			'color: #eee',
+			'border: 1px solid var(--border-color, var(--border-color-medium, #ccc))',
+			'border-radius: var(--radius-control, .375rem)',
+			'background: var(--command-bg, var(--background-color-low, #111))',
+			'color: var(--log-text, var(--text-color-high, #eee))',
 			'white-space: pre-wrap',
 			'font-family: monospace',
 			'font-size: 12px',
@@ -454,7 +455,7 @@ return view.extend({
 				E('div', {
 					'id': 'oxidns-core-actions',
 					'class': 'cbi-button-row',
-					'style': 'display: flex; flex-wrap: wrap; gap: .5em;'
+					'style': 'display: flex; flex-wrap: wrap; gap: .5em; padding-inline: var(--section-inset, .75em); padding-bottom: var(--field-gap, 1em);'
 				}, actionButtons(statusState))
 			])
 		]);

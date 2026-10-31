@@ -131,6 +131,9 @@ msgstr ""
 msgid "Install core files"
 msgstr ""
 
+msgid "Install it from Services → OxiDNS → Core, then return to this page."
+msgstr ""
+
 msgid "Install the OxiDNS core before editing the configuration."
 msgstr ""
 

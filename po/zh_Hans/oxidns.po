@@ -133,6 +133,9 @@ msgstr "安装内核"
 msgid "Install core files"
 msgstr "安装内核文件"
 
+msgid "Install it from Services → OxiDNS → Core, then return to this page."
+msgstr "请先在「服务 → OxiDNS → 内核」页面安装，然后返回本页。"
+
 msgid "Install the OxiDNS core before editing the configuration."
 msgstr "请先安装 OxiDNS 内核，再编辑配置。"
 

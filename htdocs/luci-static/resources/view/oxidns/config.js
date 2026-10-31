@@ -152,10 +152,8 @@ return view.extend({
 				E('div', { 'class': 'cbi-section' }, [
 					E('div', { 'class': 'alert-message warning', 'style': 'margin: 1em 0;' },
 						_('Install the OxiDNS core before editing the configuration.')),
-					E('a', {
-						'class': 'btn cbi-button cbi-button-action',
-						'href': L.url('admin/services/oxidns/core')
-					}, _('Install Core'))
+					E('p', { 'class': 'cbi-section-descr' },
+						_('Install it from Services → OxiDNS → Core, then return to this page.'))
 				])
 			]);
 		}
@@ -179,7 +177,7 @@ return view.extend({
 				configTextarea(configContent),
 				E('div', {
 					'class': 'cbi-button-row',
-					'style': 'display: flex; flex-wrap: wrap; gap: .5em; margin-top: 1em;'
+					'style': 'display: flex; flex-wrap: wrap; gap: .5em; margin-top: 1em; padding-inline: var(--section-inset, .75em);'
 				}, [
 					E('button', {
 						'class': 'btn cbi-button cbi-button-action',

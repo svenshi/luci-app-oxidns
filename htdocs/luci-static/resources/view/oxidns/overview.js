@@ -269,13 +269,6 @@ function disabledActionButton(label, hint, id) {
 	}, label);
 }
 
-function coreInstallLink() {
-	return E('a', {
-		'class': 'btn cbi-button cbi-button-action',
-		'href': L.url('admin/services/oxidns/core')
-	}, _('Install Core'));
-}
-
 function serviceActionButtons(status) {
 	var actions = [];
 	var missingCoreHint = _('Install the OxiDNS core before using service controls.');
@@ -283,7 +276,6 @@ function serviceActionButtons(status) {
 	if (!coreInstalled(status)) {
 		actions.push(disabledActionButton(_('Start'), missingCoreHint, 'oxidns-service-start'));
 		actions.push(disabledActionButton(_('Enable'), missingCoreHint, 'oxidns-service-enable'));
-		actions.push(coreInstallLink());
 		return actions;
 	}
 
@@ -370,7 +362,7 @@ return view.extend({
 				E('div', {
 					'id': 'oxidns-service-actions',
 					'class': 'cbi-button-row',
-					'style': 'display: flex; flex-wrap: wrap; gap: .5em;'
+					'style': 'display: flex; flex-wrap: wrap; gap: .5em; padding-inline: var(--section-inset, .75em); padding-bottom: var(--field-gap, 1em);'
 				}, serviceActionButtons(statusState))
 			])
 		]);

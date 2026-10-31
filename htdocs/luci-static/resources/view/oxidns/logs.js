@@ -183,7 +183,7 @@ return view.extend({
 			E('div', { 'class': 'cbi-section' }, [
 				E('div', {
 					'class': 'cbi-button-row',
-					'style': 'display: flex; flex-wrap: wrap; gap: .5em; margin-bottom: 1.5em;'
+					'style': 'display: flex; flex-wrap: wrap; gap: .5em; margin-bottom: 1.5em; padding-inline: var(--section-inset, .75em);'
 				}, [
 					E('button', {
 						'id': 'oxidns-log-pause-toggle',
@@ -201,7 +201,7 @@ return view.extend({
 					'scroll': function(ev) {
 						state.followTail = isNearBottom(ev.target);
 					},
-					'style': 'min-height: 560px; max-height: 72vh; overflow: auto; margin-top: .25em; padding: 1em; background: #111; color: #ddd; white-space: pre-wrap; overflow-wrap: anywhere;'
+					'style': 'min-height: 560px; max-height: 72vh; overflow: auto; margin-top: .25em; padding: 1em; border: 1px solid var(--border-color, var(--border-color-medium, #ccc)); border-radius: var(--radius-control, .375rem); background: var(--command-bg, var(--background-color-low, #111)); color: var(--log-text, var(--text-color-high, #ddd)); white-space: pre-wrap; overflow-wrap: anywhere;'
 				}, state.lines.join('\n'))
 			])
 		]);
