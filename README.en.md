@@ -109,3 +109,7 @@ The router must be able to reach GitHub Releases and release archives directly. 
 - The log page reads OxiDNS service stdout/stderr output from OpenWrt `logread`.
 - `Settings` includes a "Write to system log" switch, enabled by default. OxiDNS must be restarted after saving a change. LuCI stops the service, waits up to 10 seconds for the old procd instance to be removed, and then starts a new instance so the stdout/stderr settings are applied. A failed state query or stop timeout aborts the restart. The same stop wait is used before replacing a running core.
 - Service actions on `Overview` (Start / Stop / Restart / Enable / Disable) always write a `luci-app-oxidns` tagged audit record to the system log, including the action and whether it succeeded. It is written even when the core is not installed, the init script is missing, or the action fails. These records are visible in raw `logread` output and in the LuCI system log page; they do not appear on the OxiDNS log page, which only renders `oxidns[PID]:` output from the core.
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`). See [LICENSE](LICENSE) for the full license text.

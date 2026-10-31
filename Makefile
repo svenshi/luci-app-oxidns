@@ -5,6 +5,7 @@ PKG_VERSION:=0.1.2
 PKG_RELEASE:=1
 
 PKG_LICENSE:=GPL-3.0-or-later
+PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=Sven Shi <isvenshi@gmail.com>
 
 LUCI_TITLE:=LuCI support for OxiDNS
