@@ -64,9 +64,6 @@ msgstr "配置 OxiDNS 内核下载源、运行路径和可选下载凭据。"
 msgid "Confirm"
 msgstr "确认"
 
-msgid "Control the OpenWrt init service for OxiDNS."
-msgstr "控制 OxiDNS 的 OpenWrt init 服务。"
-
 msgid "Core"
 msgstr "内核"
 
@@ -309,6 +306,9 @@ msgstr "启动"
 
 msgid "Start on boot"
 msgstr "开机自启"
+
+msgid "Start, stop, and restart control the running process; boot autostart only affects the next boot."
+msgstr "启动、停止、重启控制当前进程；开机自启只影响下次开机。"
 
 msgid "Start the OxiDNS service before opening WebUI."
 msgstr "请先启动 OxiDNS 服务再打开 WebUI。"

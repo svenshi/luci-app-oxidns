@@ -358,7 +358,7 @@ return view.extend({
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Service')),
 				E('div', { 'class': 'cbi-section-descr' },
-					_('Control the OpenWrt init service for OxiDNS.')),
+					_('Start, stop, and restart control the running process; boot autostart only affects the next boot.')),
 				E('div', {
 					'id': 'oxidns-service-actions',
 					'class': 'cbi-button-row',

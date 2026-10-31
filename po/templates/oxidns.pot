@@ -62,9 +62,6 @@ msgstr ""
 msgid "Confirm"
 msgstr ""
 
-msgid "Control the OpenWrt init service for OxiDNS."
-msgstr ""
-
 msgid "Core"
 msgstr ""
 
@@ -303,6 +300,9 @@ msgid "Start"
 msgstr ""
 
 msgid "Start on boot"
+msgstr ""
+
+msgid "Start, stop, and restart control the running process; boot autostart only affects the next boot."
 msgstr ""
 
 msgid "Start the OxiDNS service before opening WebUI."
