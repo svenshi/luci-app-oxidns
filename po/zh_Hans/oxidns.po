@@ -242,10 +242,10 @@ msgid "Removing OxiDNS core..."
 msgstr "正在删除 OxiDNS 内核..."
 
 msgid "Repair Reinstall"
-msgstr "修复重装"
+msgstr "重新安装"
 
 msgid "Repair reinstalling OxiDNS core..."
-msgstr "正在修复重装 OxiDNS 内核..."
+msgstr "正在重新安装 OxiDNS 内核..."
 
 msgid "Restart"
 msgstr "重启"

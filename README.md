@@ -80,12 +80,12 @@ apk del oxidns
 
 LuCI 会按当前设备 CPU 架构选择 OxiDNS Linux musl release archive，例如 `oxidns-x86_64-unknown-linux-musl.tar.gz`。安装时会校验 GitHub release asset 的 SHA256 digest。
 
-如果内核已经安装，`Core` 页面提供 `Repair Reinstall` 和 `Upload Core`，用于重新下载当前已安装版本或用上传文件修复二进制 / WebUI 文件；它不会安装 latest，也不会作为升级入口。
+如果内核已经安装，`Core` 页面提供 `重新安装` 和 `Upload Core`，用于重新下载当前已安装版本或用上传文件修复二进制 / WebUI 文件；它不会安装 latest，也不会作为升级入口。
 
 ## 常用页面
 
 - `Overview`：查看内核状态、服务状态、WebUI 入口、配置路径和日志状态。
-- `Core`：首次安装、上传安装、修复重装或删除 OxiDNS 内核二进制。
+- `Core`：首次安装、上传安装、重新安装或删除 OxiDNS 内核二进制。
 - `Configuration`：查看、保存和校验配置文件。
 - `Logs`：查看运行日志，支持刷新和暂停。
 - `Settings`：设置 core repository、bundle、代理、配置路径和工作目录。
@@ -113,7 +113,7 @@ LuCI 会按当前设备 CPU 架构选择 OxiDNS Linux musl release archive，例
 ## 已知限制
 
 - 目前只支持 OxiDNS 已发布的 Linux musl release target。
-- `Core` 页面只负责首次安装、上传安装和修复重装，不负责版本升级。
+- `Core` 页面只负责首次安装、上传安装和重新安装，不负责版本升级。
 - `Overview` 的 WebUI 入口根据配置文件中的 HTTP listen 地址生成；如果监听 `127.0.0.1`，LuCI 会保留链接并提示需要本机访问或 SSH 隧道。
 - 日志页读取 OpenWrt `logread` 中的 OxiDNS 服务 stdout/stderr 输出。
 - 可在 `Settings` 中关闭“写入系统日志”（默认开启），保存后需重启 OxiDNS 才会生效。LuCI 会停止服务，等待旧 procd 实例被移除（最多 10 秒），再启动新实例，以应用 stdout/stderr 设置。状态查询失败或停止超时时，重启会中止。替换正在运行的内核前也会执行相同的停止等待。
