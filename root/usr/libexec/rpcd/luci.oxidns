@@ -1399,10 +1399,15 @@ write_openwrt_default_config() {
 			third = "";
 			listen_done = 0;
 			root_done = 0;
+			api_seen = 0;
 		}
 		/^[^[:space:]#][^:]*:/ {
 			top = $0;
 			sub(/:.*/, "", top);
+			gsub(/^["'\'']|["'\'']$/, "", top);
+			gsub(/[[:space:]]+$/, "", top);
+			if (top == "api")
+				api_seen = 1;
 			second = "";
 			third = "";
 		}
@@ -1429,7 +1434,7 @@ write_openwrt_default_config() {
 		}
 		{ print }
 		END {
-			if (!listen_done || !root_done)
+			if (api_seen && (!listen_done || !root_done))
 				exit 42;
 		}
 	' "$SOURCE_FILE" > "$OUT_FILE"
