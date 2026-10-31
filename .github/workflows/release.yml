@@ -5,11 +5,6 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      version:
-        description: Version to package, for example v0.1.2
-        required: true
-        default: v0.1.2
 
 permissions:
   contents: write
@@ -29,8 +24,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          makefile_version="$(sed -n 's/^PKG_VERSION:=//p' Makefile | head -n 1)"
+          if [[ -z "$makefile_version" ]]; then
+            echo "::error::Makefile does not define PKG_VERSION"
+            exit 1
+          fi
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "value=v${makefile_version}" >> "$GITHUB_OUTPUT"
           else
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
@@ -59,6 +59,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.value }}
+          target_commitish: ${{ github.sha }}
           files: |
             dist/*.ipk
             dist/*.apk
