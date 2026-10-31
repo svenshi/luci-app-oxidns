@@ -13,6 +13,7 @@ DEFAULT_SERVICE_NAME="oxidns"
 DEFAULT_CORE_REPOSITORY="svenshi/oxidns"
 DEFAULT_CORE_BUNDLE="full"
 GITHUB_API_BASE="https://api.github.com"
+GITHUB_WEB_BASE="https://github.com"
 TMP_ROOT="${TMPDIR:-/tmp}"
 CORE_PROGRESS_DIR="$TMP_ROOT/luci-oxidns"
 CORE_PROGRESS_LOG="$CORE_PROGRESS_DIR/core-progress.log"
@@ -1306,6 +1307,81 @@ valid_sha256() {
 	printf '%s' "$1" | grep -Eq '^[0-9a-fA-F]{64}$'
 }
 
+resolve_latest_tag_from_web() {
+	WEB_REPOSITORY="$1"
+	WEB_PAGE="$2"
+	WEB_TAG=""
+
+	download_file "$GITHUB_WEB_BASE/$WEB_REPOSITORY/releases/latest" "$WEB_PAGE" || return 1
+	WEB_TAG="$(tr '<' '\n<' < "$WEB_PAGE" | sed -n 's/.*property="og:url" content="[^"]*\/releases\/tag\/\([^"]*\)".*/\1/p' | head -n 1)"
+	case "$WEB_TAG" in
+		''|*[!A-Za-z0-9._+-]*)
+			return 1
+			;;
+	esac
+	printf '%s' "$WEB_TAG"
+}
+
+web_release_digest() {
+	WEB_REPOSITORY="$1"
+	WEB_TAG="$2"
+	WEB_ASSET="$3"
+	WEB_PAGE="$4"
+
+	download_file "$GITHUB_WEB_BASE/$WEB_REPOSITORY/releases/expanded_assets/$WEB_TAG" "$WEB_PAGE" || return 1
+	tr '<' '\n<' < "$WEB_PAGE" | awk -v asset="$WEB_ASSET" '
+		index($0, asset) {
+			if (match($0, /value="sha256:[0-9a-fA-F]+"/)) {
+				digest = substr($0, RSTART, RLENGTH);
+				sub(/^value="sha256:/, "", digest);
+				sub(/"$/, "", digest);
+				print digest;
+				exit;
+			}
+		}
+	'
+}
+
+resolve_release_from_web() {
+	WEB_REQUEST_TARGET="$1"
+	WEB_ASSET="$2"
+	WEB_ERROR=""
+
+	if [ "$WEB_REQUEST_TARGET" = "latest" ]; then
+		WEB_LATEST_PAGE="$CORE_TMP_DIR/release-latest.html"
+		if ! WEB_TAG="$(resolve_latest_tag_from_web "$CORE_REPOSITORY" "$WEB_LATEST_PAGE")"; then
+			WEB_ERROR="failed to resolve the latest release tag from github.com"
+			return 1
+		fi
+	else
+		WEB_TAG="$WEB_REQUEST_TARGET"
+	fi
+
+	case "$WEB_TAG" in
+		''|*[!A-Za-z0-9._+-]*)
+			WEB_ERROR="release tag cannot be used in a github.com URL: ${WEB_TAG:-missing}"
+			return 1
+			;;
+	esac
+
+	WEB_ASSETS_PAGE="$CORE_TMP_DIR/release-assets.html"
+	if ! WEB_SHA256="$(web_release_digest "$CORE_REPOSITORY" "$WEB_TAG" "$WEB_ASSET" "$WEB_ASSETS_PAGE")"; then
+		WEB_ERROR="failed to fetch release assets from github.com"
+		return 1
+	fi
+	WEB_SHA256="$(printf '%s' "$WEB_SHA256" | tr -d '[:space:]')"
+	if ! valid_sha256 "$WEB_SHA256"; then
+		WEB_ERROR="github.com release page does not contain a SHA256 digest for $WEB_ASSET"
+		return 1
+	fi
+
+	SELECT_TAG="$WEB_TAG"
+	SELECT_ASSET_NAME="$WEB_ASSET"
+	SELECT_URL="$GITHUB_WEB_BASE/$CORE_REPOSITORY/releases/download/$WEB_TAG/$WEB_ASSET"
+	SELECT_SHA256="$WEB_SHA256"
+	SELECT_SIZE=""
+}
+
 validate_safe_archive() {
 	ARCHIVE="$1"
 	if ! tar -tzf "$ARCHIVE" | awk '
@@ -1490,25 +1566,32 @@ install_core_from_release() {
 	RELEASE_URL="$(release_api_url "$CORE_REPOSITORY" "$RELEASE_TARGET")"
 
 	core_progress_log "info" "fetch release metadata: $RELEASE_URL"
-	if ! download_file "$RELEASE_URL" "$RELEASE_FILE"; then
-		core_install_error "release_fetch_failed" "failed to fetch OxiDNS release metadata" "download_metadata" "repository=$CORE_REPOSITORY release=$RELEASE_TARGET url=$RELEASE_URL; ${DOWNLOAD_ERROR:-unknown download error}"
-		return 1
-	fi
-	core_progress_command "jsonfilter release metadata for $ASSET_NAME"
-	set +e
-	select_release_asset "$RELEASE_FILE" "$ASSET_NAME"
-	SELECT_RELEASE_RC="$?"
-	set -e
-	if [ "$SELECT_RELEASE_RC" -ne 0 ]; then
-		if [ "$SELECT_RELEASE_RC" -eq 2 ]; then
-			SELECT_RELEASE_DETAIL="jsonfilter is not installed or unavailable; wanted asset=$ASSET_NAME repository=$CORE_REPOSITORY release=$RELEASE_TARGET"
-		else
-			SELECT_RELEASE_DETAIL="wanted asset=$ASSET_NAME repository=$CORE_REPOSITORY release=$RELEASE_TARGET"
+	if download_file "$RELEASE_URL" "$RELEASE_FILE"; then
+		core_progress_command "jsonfilter release metadata for $ASSET_NAME"
+		set +e
+		select_release_asset "$RELEASE_FILE" "$ASSET_NAME"
+		SELECT_RELEASE_RC="$?"
+		set -e
+		if [ "$SELECT_RELEASE_RC" -ne 0 ]; then
+			if [ "$SELECT_RELEASE_RC" -eq 2 ]; then
+				SELECT_RELEASE_DETAIL="jsonfilter is not installed or unavailable; wanted asset=$ASSET_NAME repository=$CORE_REPOSITORY release=$RELEASE_TARGET"
+			else
+				SELECT_RELEASE_DETAIL="wanted asset=$ASSET_NAME repository=$CORE_REPOSITORY release=$RELEASE_TARGET"
+			fi
+			core_install_error "release_asset_not_found" "selected OxiDNS release does not contain the required archive" "select_release_asset" "$SELECT_RELEASE_DETAIL"
+			return 1
 		fi
-		core_install_error "release_asset_not_found" "selected OxiDNS release does not contain the required archive" "select_release_asset" "$SELECT_RELEASE_DETAIL"
-		return 1
+		core_progress_log "success" "selected release=$SELECT_TAG asset=$SELECT_ASSET_NAME size=${SELECT_SIZE:-unknown}"
+	else
+		API_METADATA_ERROR="${DOWNLOAD_ERROR:-unknown download error}"
+		core_progress_log "warn" "release metadata API failed: $API_METADATA_ERROR"
+		core_progress_log "info" "retry release metadata via github.com release pages"
+		if ! resolve_release_from_web "$RELEASE_TARGET" "$ASSET_NAME"; then
+			core_install_error "release_fetch_failed" "failed to fetch OxiDNS release metadata" "download_metadata" "api=$API_METADATA_ERROR; web=${WEB_ERROR:-unknown}; repository=$CORE_REPOSITORY release=$RELEASE_TARGET"
+			return 1
+		fi
+		core_progress_log "success" "selected release=$SELECT_TAG asset=$SELECT_ASSET_NAME via github.com fallback"
 	fi
-	core_progress_log "success" "selected release=$SELECT_TAG asset=$SELECT_ASSET_NAME size=${SELECT_SIZE:-unknown}"
 	if ! valid_sha256 "$SELECT_SHA256"; then
 		core_install_error "release_digest_missing" "selected OxiDNS release asset does not include a valid SHA256 digest" "verify_release_digest" "asset=$SELECT_ASSET_NAME digest=${SELECT_SHA256:-missing}"
 		return 1
