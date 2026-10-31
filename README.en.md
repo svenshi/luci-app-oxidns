@@ -27,18 +27,26 @@ wget -O- https://oxidns.org/install.sh | sh
 
 The script detects the OpenWrt package manager, reads the latest package from `luci-app-oxidns` Releases, selects `.ipk` or `.apk` for the system, installs `luci-app-oxidns` plus the optional Simplified Chinese translation package, and restarts `rpcd`. See <https://oxidns.org/openwrt> for more script options.
 
-You can also download the LuCI release artifact and install it manually:
+You can also download the LuCI release artifact from this repository and install it manually. Upload the package to the device (for example, `/tmp`), then install it:
+
+OpenWrt 24.10:
 
 ```sh
-opkg install ./luci-app-oxidns_0.1.0-r1_all.ipk
-opkg install ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk
+opkg install /tmp/luci-app-oxidns_*.ipk
+
+# Optional, install the Simplified Chinese language pack
+
+opkg install /tmp/luci-i18n-oxidns-zh-cn_*.ipk
 ```
 
-On OpenWrt systems using `apk`:
+OpenWrt 25.12:
 
 ```sh
-apk add --allow-untrusted --no-network ./luci-app-oxidns_0.1.0-r1_all.apk
-apk add --allow-untrusted --no-network ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
+apk add --allow-untrusted /tmp/luci-app-oxidns_*.apk
+
+# Optional, install the Simplified Chinese language pack
+
+apk add --allow-untrusted /tmp/luci-i18n-oxidns-zh-cn_*.apk
 ```
 
 If the menu does not appear after installation, restart `rpcd`:

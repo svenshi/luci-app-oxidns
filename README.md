@@ -28,17 +28,26 @@ wget -O- https://oxidns.org/install.sh | sh
 脚本会检测 OpenWrt 包管理器，从 `luci-app-oxidns` Releases 读取最新包，按系统选择 `.ipk` 或 `.apk`，安装 `luci-app-oxidns` 和可选简体中文语言包，并自动重启 `rpcd`。更多脚本选项见 <https://oxidns.org/openwrt>。
 
 也可以从本仓库 Release 下载对应的 LuCI 包后手动安装：
+把安装包上传到设备（例如 `/tmp`），然后安装：
+
+OpenWrt 24.10：
 
 ```sh
-opkg install ./luci-app-oxidns_0.1.0-r1_all.ipk
-opkg install ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.ipk
+opkg install /tmp/luci-app-oxidns_*.ipk
+
+#可选，安装简体中文语言包
+
+opkg install /tmp/luci-i18n-oxidns-zh-cn_*.ipk
 ```
 
-在使用 `apk` 的 OpenWrt 系统上：
+OpenWrt 25.12：
 
 ```sh
-apk add --allow-untrusted --no-network ./luci-app-oxidns_0.1.0-r1_all.apk
-apk add --allow-untrusted --no-network ./luci-i18n-oxidns-zh-cn_0.1.0-r1_all.apk
+apk add --allow-untrusted /tmp/luci-app-oxidns_*.apk
+
+#可选，安装简体中文语言包：
+
+apk add --allow-untrusted /tmp/luci-i18n-oxidns-zh-cn_*.apk
 ```
 
 如果安装后菜单没有出现，重启 `rpcd`：
