@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to package, for example v0.1.0
+        description: Version to package, for example v0.1.2
         required: true
-        default: v0.1.0
+        default: v0.1.2
 
 permissions:
   contents: write
@@ -33,6 +33,23 @@ jobs:
             echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           else
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify release version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          release_version="${RELEASE_VERSION#v}"
+          makefile_version="$(sed -n 's/^PKG_VERSION:=//p' Makefile | head -n 1)"
+          if [[ -z "$makefile_version" ]]; then
+            echo "::error::Makefile does not define PKG_VERSION"
+            exit 1
+          fi
+          if [[ "$release_version" != "$makefile_version" ]]; then
+            echo "::error::Release version $release_version does not match Makefile PKG_VERSION $makefile_version; bump Makefile first"
+            exit 1
           fi
 
       - name: Run release checks and build packages
