@@ -91,8 +91,8 @@ msgstr "删除配置文件"
 msgid "Delete working directory"
 msgstr "删除工作目录"
 
-msgid "Disable"
-msgstr "禁用"
+msgid "Disable on boot"
+msgstr "取消开机自启"
 
 msgid "Download proxy"
 msgstr "下载代理"
@@ -106,8 +106,8 @@ msgstr "下载 release 元数据"
 msgid "Edit, validate, and save the full OxiDNS YAML configuration file."
 msgstr "编辑、校验并保存完整的 OxiDNS YAML 配置文件。"
 
-msgid "Enable"
-msgstr "启用"
+msgid "Enable on boot"
+msgstr "设为开机自启"
 
 msgid "Error"
 msgstr "错误"

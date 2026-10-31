@@ -275,7 +275,7 @@ function serviceActionButtons(status) {
 
 	if (!coreInstalled(status)) {
 		actions.push(disabledActionButton(_('Start'), missingCoreHint, 'oxidns-service-start'));
-		actions.push(disabledActionButton(_('Enable'), missingCoreHint, 'oxidns-service-enable'));
+		actions.push(disabledActionButton(_('Enable on boot'), missingCoreHint, 'oxidns-service-enable'));
 		return actions;
 	}
 
@@ -287,9 +287,9 @@ function serviceActionButtons(status) {
 	}
 
 	if (serviceEnabled(status))
-		actions.push(actionButton(_('Disable'), 'disable', 'neutral', 'oxidns-service-disable'));
+		actions.push(actionButton(_('Disable on boot'), 'disable', 'neutral', 'oxidns-service-disable'));
 	else
-		actions.push(actionButton(_('Enable'), 'enable', 'positive', 'oxidns-service-enable'));
+		actions.push(actionButton(_('Enable on boot'), 'enable', 'positive', 'oxidns-service-enable'));
 
 	return actions;
 }

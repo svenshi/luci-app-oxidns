@@ -89,7 +89,7 @@ msgstr ""
 msgid "Delete working directory"
 msgstr ""
 
-msgid "Disable"
+msgid "Disable on boot"
 msgstr ""
 
 msgid "Download proxy"
@@ -104,7 +104,7 @@ msgstr ""
 msgid "Edit, validate, and save the full OxiDNS YAML configuration file."
 msgstr ""
 
-msgid "Enable"
+msgid "Enable on boot"
 msgstr ""
 
 msgid "Error"
