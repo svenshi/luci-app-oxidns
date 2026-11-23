@@ -5,6 +5,7 @@ START=90
 STOP=10
 
 PROG="/usr/bin/oxidns"
+WEBUI_DIR="/usr/share/oxidns/webui"
 DEFAULT_CONFIG_PATH="/etc/oxidns/config.yaml"
 DEFAULT_WORKING_DIR="/var/lib/oxidns"
 
@@ -13,6 +14,56 @@ load_oxidns_settings() {
 	config_get CONFIG_PATH main config_path "$DEFAULT_CONFIG_PATH"
 	config_get WORKING_DIR main working_dir "$DEFAULT_WORKING_DIR"
 	config_get_bool LOG_SYSLOG main log_syslog 1
+}
+
+uses_managed_webui_root() {
+	# Match the block layout used by LuCI's generated config.
+	awk -v root="$WEBUI_DIR" '
+		/^[^[:space:]#]/ {
+			api = /^api:[[:space:]]*(#.*)?$/
+			http = webui = 0
+		}
+		api && /^  [^[:space:]#]/ {
+			http = /^  http:[[:space:]]*(#.*)?$/
+			webui = 0
+		}
+		http && /^    [^[:space:]#]/ { webui = /^    webui:[[:space:]]*(#.*)?$/ }
+		webui && /^      root:/ {
+			sub(/^      root:[[:space:]]*/, "")
+			sub(/[[:space:]]+#.*$/, "")
+			sub(/[[:space:]]+$/, "")
+			quote = sprintf("%c", 39)
+			found = ($0 == root || $0 == "\"" root "\"" || $0 == quote root quote)
+			exit
+		}
+		END { exit !found }
+	' "$CONFIG_PATH"
+}
+
+prepare_webui_upgrade_path() {
+	local upgrade_path="$WORKING_DIR/webui"
+	local backup_dir=""
+
+	[ -d "$WEBUI_DIR" ] && uses_managed_webui_root || return 0
+	[ ! "$upgrade_path" -ef "$WEBUI_DIR" ] || return 0
+
+	# The API and upgrade executor default to ./webui and follow symlinks.
+	# Save a separate tree left by a previous upgrade before creating the link.
+	if [ -e "$upgrade_path" ] || [ -L "$upgrade_path" ]; then
+		[ -d "$upgrade_path" ] && [ ! -L "$upgrade_path" ] || return 1
+		backup_dir="$(mktemp -d "$WORKING_DIR/webui-backup.XXXXXX")" || return 1
+		if ! mv "$upgrade_path" "$backup_dir/"; then
+			rmdir "$backup_dir"
+			return 1
+		fi
+	fi
+
+	if ! ln -s "$WEBUI_DIR" "$upgrade_path"; then
+		if [ -n "$backup_dir" ] && mv "$backup_dir/webui" "$upgrade_path"; then
+			rmdir "$backup_dir"
+		fi
+		return 1
+	fi
 }
 
 start_service() {
@@ -27,7 +78,10 @@ start_service() {
 		return 1
 	fi
 
-	mkdir -p "$WORKING_DIR"
+	mkdir -p "$WORKING_DIR" || return 1
+	if ! prepare_webui_upgrade_path; then
+		echo "could not link OxiDNS WebUI upgrade path: $WORKING_DIR/webui" >&2
+	fi
 
 	procd_open_instance
 	procd_set_param command "$PROG" start -c "$CONFIG_PATH" -d "$WORKING_DIR"

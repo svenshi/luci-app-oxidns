@@ -1941,6 +1941,11 @@ emit_core_remove_locked() {
 	rm -f "$OXIDNS_BIN"
 	core_progress_command "rm -rf $WEBUI_DIR"
 	rm -rf "$WEBUI_DIR"
+	UPGRADE_WEBUI_PATH="$WORKING_DIR/webui"
+	if [ -L "$UPGRADE_WEBUI_PATH" ] && [ "$(readlink "$UPGRADE_WEBUI_PATH")" = "$WEBUI_DIR" ]; then
+		core_progress_command "rm -f $UPGRADE_WEBUI_PATH"
+		rm -f "$UPGRADE_WEBUI_PATH"
+	fi
 
 	if [ "$REMOVE_CONFIG" = "1" ]; then
 		core_progress_command "rm -f $CONFIG_PATH"

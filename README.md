@@ -95,6 +95,8 @@ LuCI 会按当前设备 CPU 架构选择 OxiDNS Linux musl release archive，例
 
 升级 LuCI 插件时，下载新版本 `luci-app-oxidns` 包并重新安装即可。LuCI 页面内不提供自升级。
 
+使用 LuCI 生成的默认 WebUI 路径时，OxiDNS 服务启动会将工作目录中的 `webui` 链接到 `/usr/share/oxidns/webui`，让内核自升级更新正在提供的页面。升级 LuCI 插件后，重启 OxiDNS 服务以应用此修复。如果内核已升级但页面仍是旧版，请在 `Core` 页面运行 `Repair Reinstall`，用当前内核版本对应的发行包恢复 WebUI。
+
 删除 OxiDNS 内核可以在 LuCI 的 `Core` 页面点击 `Remove Core`。该操作会停止并禁用服务，删除 `/usr/bin/oxidns` 和 `/usr/share/oxidns/webui`，但保留 `/etc/oxidns/config.yaml` 和 `/var/lib/oxidns`。
 
 ## 私有仓库与下载

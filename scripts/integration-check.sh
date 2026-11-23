@@ -78,6 +78,7 @@ printf '%s\n' \
 	'procd_set_param() { printf "%s\n" "$*" >> "$PROCD_ARGS"; }' \
 	'. "'"$PWD"'/root/etc/init.d/oxidns"' \
 	'PROG="'"$INIT_STUB_DIR"'/oxidns"' \
+	'WEBUI_DIR="'"$INIT_STUB_DIR"'/share/webui"' \
 	'start_service' > "$INIT_STUB_DIR/drive.sh"
 INIT_STUB_ARGS="$INIT_STUB_DIR/procd-args"
 init_log_destination_args() {
@@ -90,6 +91,40 @@ grep -qx 'stderr 1' "$INIT_STUB_ARGS"
 init_log_destination_args 0
 grep -qx 'stdout 0' "$INIT_STUB_ARGS"
 grep -qx 'stderr 0' "$INIT_STUB_ARGS"
+
+INIT_WEBUI_PATH="$INIT_STUB_DIR/webui"
+INIT_WEBUI_ROOT="$INIT_STUB_DIR/share/webui"
+mkdir -p "$INIT_WEBUI_ROOT"
+printf 'old-served-ui\n' > "$INIT_WEBUI_ROOT/index.html"
+printf 'api:\n  http:\n    listen: ":9199"\n    webui:\n      root: "%s"\n' "$INIT_WEBUI_ROOT" > "$INIT_STUB_DIR/config.yaml"
+init_log_destination_args 1
+test "$(readlink "$INIT_WEBUI_PATH")" = "$INIT_WEBUI_ROOT"
+test "$(cat "$INIT_WEBUI_PATH/index.html")" = old-served-ui
+
+# Replacing the symlink target, as the core updater does, keeps both paths in sync.
+mv "$INIT_WEBUI_ROOT" "$INIT_STUB_DIR/share/previous-webui"
+mkdir "$INIT_WEBUI_ROOT"
+printf 'new-served-ui\n' > "$INIT_WEBUI_ROOT/index.html"
+init_log_destination_args 1
+test "$(readlink "$INIT_WEBUI_PATH")" = "$INIT_WEBUI_ROOT"
+test "$(cat "$INIT_WEBUI_PATH/index.html")" = new-served-ui
+
+# An affected device can already have a separate WebUI tree in its working directory.
+rm "$INIT_WEBUI_PATH"
+mkdir "$INIT_WEBUI_PATH"
+printf 'previously-misplaced-ui\n' > "$INIT_WEBUI_PATH/index.html"
+init_log_destination_args 1
+test "$(readlink "$INIT_WEBUI_PATH")" = "$INIT_WEBUI_ROOT"
+test "$(cat "$INIT_STUB_DIR"/webui-backup.*/webui/index.html)" = previously-misplaced-ui
+
+# Respect a custom WebUI root and leave its working-directory files in place.
+rm "$INIT_WEBUI_PATH"
+mkdir "$INIT_WEBUI_PATH"
+printf 'custom-ui\n' > "$INIT_WEBUI_PATH/index.html"
+printf 'api:\n  http:\n    webui:\n      root: "./webui"\n' > "$INIT_STUB_DIR/config.yaml"
+init_log_destination_args 1
+test ! -L "$INIT_WEBUI_PATH"
+test "$(cat "$INIT_WEBUI_PATH/index.html")" = custom-ui
 rm -rf "$INIT_STUB_DIR"
 
 scripts/check.sh
